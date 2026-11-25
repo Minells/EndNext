@@ -22,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3,<10",
+    "pytest-cov>=7,<8",
     "ruff>=0.11,<1",
     "mypy>=1.15,<3",
     "types-jsonschema>=4.24,<5",
@@ -36,6 +37,16 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["endnext"]
+patch = ["subprocess"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+fail_under = 96
 
 [tool.ruff]
 target-version = "py312"

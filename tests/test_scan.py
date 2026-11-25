@@ -247,3 +247,35 @@ def test_scan_verifies_tls_certificate(tmp_path, contract):
     data = json.loads(result.stdout)
     assert data["requests_sent"] == 0 and data["requests_attempted"] == 1
     assert data["cases"][0]["reason"] == "transport_error"
+
+
+def test_scan_text_reports_observation_and_request_counts(tmp_path, contract):
+    with listener(_json_response) as (origin, requests):
+        result = run_cli("scan", contract, config(tmp_path, origin))
+    assert result.returncode == 0 and not result.stderr
+    assert len(requests) == 1
+    assert "PASS GET /api/item · a" in result.stdout
+    assert "response.status.expected" in result.stdout
+    assert "1 requests sent · 1/1 attempts" in result.stdout
+    assert "PASS 4" in result.stdout
+
+
+def test_scan_keeps_status_when_response_json_is_invalid(tmp_path, contract):
+    with listener(
+        lambda _: (200, {"Content-Type": "application/json"}, b'{"value":')
+    ) as (origin, requests):
+        result = run_cli("scan", contract, config(tmp_path, origin), "--format", "json")
+    assert result.returncode == 2 and not result.stderr
+    assert len(requests) == 1
+    report = json.loads(result.stdout)
+    assert report["requests_sent"] == 1
+    (case,) = report["cases"]
+    assert case["state"] == "INCONCLUSIVE" and case["status"] == 200
+    assert {
+        assertion["rule"]: assertion["verdict"] for assertion in case["assertions"]
+    } == {
+        "response.body.schema": "INCONCLUSIVE",
+        "response.status.documented": "PASS",
+        "response.media_type.documented": "PASS",
+        "response.status.expected": "PASS",
+    }

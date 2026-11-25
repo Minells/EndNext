@@ -177,6 +177,7 @@ class LoopbackTransport:
         if (
             request.method != "GET"
             or not self.target.permits(request.url)
+            or request.headers.get_list("host") != [request.url.netloc.decode("ascii")]
             or "cookie" in request.headers
             or "authorization" in request.headers
         ):

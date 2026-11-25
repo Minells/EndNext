@@ -84,6 +84,13 @@ def _schema_assertion(
             return Assertion(
                 rule, "SKIPPED", "No body for HTTP 204.", "The observation has no body."
             )
+        if fixture.body_state == "truncated":
+            return Assertion(
+                rule,
+                "INCONCLUSIVE",
+                "No body for HTTP 204.",
+                "The partial observation cannot establish whether there was a body.",
+            )
         return Assertion(
             rule, "FAIL", "No body for HTTP 204.", "The observation contains a body."
         )

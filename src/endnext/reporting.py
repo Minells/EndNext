@@ -42,8 +42,14 @@ class SavedReport:
         else:
             raise InputError("The report contains invalid cases.")
         actual = counts(assertion for case in entries for assertion in case.assertions)
-        if version == "2" and obj.get("counts") != actual:
-            raise InputError("The saved report counts do not match its assertions.")
+        if version == "2":
+            declared = obj.get("counts")
+            if (
+                not isinstance(declared, dict)
+                or declared != actual
+                or any(type(value) is not int for value in declared.values())
+            ):
+                raise InputError("The saved report counts do not match its assertions.")
         sent = obj.get("requests_sent")
         if sent is not None and (type(sent) is not int or sent < 0):
             raise InputError("The report contains an invalid request count.")
