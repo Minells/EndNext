@@ -398,3 +398,125 @@ def test_response_without_schema_cannot_pass(tmp_path):
     assert "ERROR [input]" in completed.stderr
     assert "response has no body schema" in completed.stderr
     assert_no_sentinel(completed.stdout, completed.stderr)
+
+
+def test_plan_is_deterministic_and_offline_with_security_and_budget(tmp_path):
+    spec = json.loads(CONTRACT.read_text())
+    spec["security"] = [{"apiKey": []}]
+    spec["components"]["securitySchemes"] = {
+        "apiKey": {"type": "apiKey", "in": "header", "name": "X-Key"}
+    }
+    item_path = spec["paths"]["/items/{id}"]
+    item_path["get"]["security"] = [{"apiKey": []}, {}]
+    for path in ("/protected", "/no-case", "/excluded"):
+        operation = {"responses": item_path["get"]["responses"]}
+        if path == "/no-case":
+            operation["security"] = []
+        spec["paths"][path] = {"get": operation}
+    contract = write_json(tmp_path / "contract.json", spec)
+    config = tmp_path / "suite.toml"
+    config.write_text(
+        f"""
+select = ["GET /protected", "GET /items/{{id}}", "GET /no-case"]
+request_budget = 1
+
+[[cases]]
+name = "z-over-budget"
+operation = "GET /items/{{id}}"
+source = "http"
+expected_status = 200
+path_parameters = {{ id = "sample" }}
+
+[[cases]]
+name = "b-imported"
+operation = "GET /items/{{id}}"
+source = "fixture"
+fixture = {json.dumps(str(FAIL))}
+
+[[cases]]
+name = "a-projected"
+operation = "GET /items/{{id}}"
+source = "http"
+expected_status = 200
+path_parameters = {{ id = "sample" }}
+
+[[cases]]
+name = "c-missing"
+operation = "GET /items/{{id}}"
+source = "fixture"
+fixture = "absent.json"
+
+[[cases]]
+name = "d-no-parameters"
+operation = "GET /items/{{id}}"
+source = "http"
+expected_status = 200
+
+[[cases]]
+name = "protected"
+operation = "GET /protected"
+source = "http"
+expected_status = 200
+
+[[cases]]
+name = "excluded"
+operation = "GET /excluded"
+source = "http"
+expected_status = 200
+""",
+        encoding="utf-8",
+    )
+    first = run_cli("plan", contract, config, "--format", "json", offline=True)
+    second = run_cli("plan", contract, config, "--format", "json", offline=True)
+    assert first.returncode == second.returncode == 0
+    assert not first.stderr and not second.stderr
+    assert first.stdout == second.stdout
+    assert_no_sentinel(first.stdout, first.stderr)
+    result = json.loads(first.stdout)
+    operations = {
+        entry["operation"]["path_template"]: entry for entry in result["operations"]
+    }
+    assert list(operations) == ["/excluded", "/items/{id}", "/no-case", "/protected"]
+    assert operations["/no-case"]["cases"] == []
+    assert operations["/no-case"]["allows_anonymous"] is True
+    assert operations["/no-case"]["security_source"] == "operation"
+    assert not operations["/protected"]["allows_anonymous"]
+    assert operations["/protected"]["security_source"] == "document"
+    assert operations["/protected"]["cases"][0]["reason"] == "authentication_required"
+    assert operations["/excluded"]["cases"][0]["reason"] == "operation_not_selected"
+    item = operations["/items/{id}"]
+    assert item["effective_security"] == [{"apiKey": []}, {}]
+    assert item["allows_anonymous"]
+    assert [case["reason"] for case in item["cases"]] == [
+        None,
+        None,
+        "fixture_missing",
+        "path_parameters_missing_or_invalid",
+        "request_budget_exhausted",
+    ]
+    assert [case["request_cost"] for case in item["cases"]] == [1, 0, 0, 0, 0]
+    assert [len(case["candidate_rules"]) for case in item["cases"]] == [4, 3, 0, 0, 0]
+    assert result["requests_planned"] == result["request_budget"] == 1
+    assert result["candidate_assertions"] == 7
+    assert result["cases_planned"] == 2
+    assert result["cases_skipped"] == 5
+
+
+@pytest.mark.parametrize(
+    ("config", "message"),
+    [
+        ('select = ["GET /unknown"]', "selected operation is absent"),
+        ("select = []\nrequest_budget = -1", "request budget"),
+        (
+            'select = []\n[[cases]]\nname = "case"\noperation = "GET /items/{id}"\nsource = "fixture"\nfixture = "https://example.invalid/a.json"',
+            "local filesystem",
+        ),
+    ],
+)
+def test_plan_rejects_invalid_input(tmp_path, config, message):
+    path = tmp_path / "config.toml"
+    path.write_text(config, encoding="utf-8")
+    result = run_cli("plan", CONTRACT, path, offline=True)
+    assert result.returncode == 2, result.stderr
+    assert "ERROR [input]" in result.stderr and message in result.stderr
+    assert not result.stdout
