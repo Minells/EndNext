@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import NoReturn
 from uuid import uuid4
 
+from .baseline import compare, render_diff
 from .contract import Contract
 from .evidence import Inventory, Operation, counts, primary, report
 from .inputs import Fixture, InputError
@@ -55,6 +56,16 @@ def main(argv: list[str] | None = None) -> int:
     report_command.add_argument(
         "--format", choices=("text", "markdown"), default="text"
     )
+    diff_command = commands.add_parser(
+        "diff", help="Compare a saved baseline with the current evidence."
+    )
+    diff_command.add_argument(
+        "baseline", type=Path, help="Saved baseline check or scan JSON"
+    )
+    diff_command.add_argument(
+        "current", type=Path, help="Saved current check or scan JSON"
+    )
+    diff_command.add_argument("--format", choices=("text", "json"), default="text")
     for command in (check, inspect, plan, scan_command):
         command.add_argument(
             "contract", type=Path, help="Local OpenAPI 3.1 JSON or YAML document"
@@ -68,6 +79,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.command == "diff":
+            delta = compare(
+                SavedReport.load(args.baseline), SavedReport.load(args.current)
+            )
+            print(render_diff(delta, output_format=args.format))
+            return delta.exit_code
         if args.command == "report":
             print(
                 render(

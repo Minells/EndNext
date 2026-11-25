@@ -79,3 +79,23 @@ Per una fixture con `identity: "anonymous"`, `expected_access` permette di confr
 ```
 
 Il primo comando esce con codice 1, con evidenza valida in `evidence.json`. Il report JSON v2 conserva tutte le asserzioni. `report` rilegge anche i documenti v1 e mantiene verdetti, provenienza e conteggi nei formati terminale e Markdown. I casi di body parziale e timeout nella suite producono rispettivamente `INCONCLUSIVE` e `ERROR`, con codice 2.
+
+## Confrontare due esecuzioni
+
+Salva i report JSON di due esecuzioni della stessa suite e confrontali offline. L'esempio registra una regressione nello schema di risposta. Il secondo `check` e il comando `diff` escono con codice 1.
+
+```sh
+.venv/bin/endnext check examples/items.openapi.json examples/item-pass.json --format json > baseline.json
+.venv/bin/endnext check examples/items.openapi.json examples/item-fail.json --format json > current.json
+.venv/bin/endnext diff baseline.json current.json --format json
+```
+
+`diff` legge report di `check` e `scan` v1 e v2. Abbina metodo, path template, nome del caso, tipo di provenienza e regola. Il fingerprint include anche la posizione del campo, così un FAIL che si sposta su un altro campo emerge come nuovo. Un PASS della stessa regola conferma la risoluzione. Se un controllo già eseguito risulta assente, saltato o inconcludente, appare come non verificato. Mantieni stabili i nomi dei casi tra le esecuzioni.
+
+| Esito del confronto | Codice di uscita |
+| --- | --- |
+| Almeno un controllo confrontabile, senza nuovi FAIL o verifiche mancanti rispetto alla baseline | `0` |
+| Almeno un nuovo FAIL, anche in presenza di verifiche mancanti | `1` |
+| Input non valido, confronto senza controlli confrontabili o verifica incompleta | `2` |
+
+Gli avvisi e i FAIL già presenti sono visibili nel riepilogo e non bloccano da soli il confronto.
