@@ -16,6 +16,7 @@ class ReportCase:
     operation: Operation
     source: str
     assertions: tuple[Assertion, ...]
+    fixture: str | None = None
 
 
 @dataclass(frozen=True)
@@ -78,10 +79,11 @@ def _assertion(obj: JsonObject) -> Assertion:
 def _case(obj: JsonObject, version: Json) -> ReportCase:
     operation = _object(obj.get("operation"))
     raw_source = obj.get("source")
+    fixture = None
     if isinstance(raw_source, dict):
         source = _text(raw_source.get("kind"))
         if raw_source.get("fixture") is not None:
-            source += f" ({_text(raw_source.get('fixture'))})"
+            fixture = _text(raw_source.get("fixture"))
     else:
         source = _text(raw_source)
     identifier = operation.get("operation_id")
@@ -112,6 +114,7 @@ def _case(obj: JsonObject, version: Json) -> ReportCase:
         ),
         source,
         assertions,
+        fixture,
     )
 
 
@@ -145,11 +148,16 @@ def render(saved: SavedReport, *, markdown: bool) -> str:
         operation = f"{case.operation.method} {case.operation.path_template}"
         if case.operation.operation_id:
             operation += f" ({case.operation.operation_id})"
+        source = (
+            f"{case.source} ({case.fixture})"
+            if case.fixture is not None
+            else case.source
+        )
         for assertion in case.assertions:
             values = (
                 case.name,
                 operation,
-                case.source,
+                source,
                 assertion.verdict,
                 assertion.rule,
                 assertion.field or "",
