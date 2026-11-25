@@ -10,9 +10,12 @@ from typing import NoReturn
 from uuid import uuid4
 
 from .contract import Contract
-from .evidence import Inventory, Operation, report
+from .evidence import Inventory, Operation, counts, primary, report
 from .inputs import Fixture, InputError
 from .planner import Plan, PlanConfig, build_plan
+from .reporting import SavedReport, format_counts, render
+from .reporting import safe_terminal as _terminal
+from .rules import verify
 from .scan import ScanRun, scan
 from .transport import Target
 
@@ -43,6 +46,15 @@ def main(argv: list[str] | None = None) -> int:
     scan_command = commands.add_parser(
         "scan", help="Check explicitly authorized loopback GET cases."
     )
+    report_command = commands.add_parser(
+        "report", help="Render a saved JSON evidence report."
+    )
+    report_command.add_argument(
+        "input_report", type=Path, help="Saved EndNext check or scan JSON"
+    )
+    report_command.add_argument(
+        "--format", choices=("text", "markdown"), default="text"
+    )
     for command in (check, inspect, plan, scan_command):
         command.add_argument(
             "contract", type=Path, help="Local OpenAPI 3.1 JSON or YAML document"
@@ -56,6 +68,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.command == "report":
+            print(
+                render(
+                    SavedReport.load(args.input_report),
+                    markdown=args.format == "markdown",
+                )
+            )
+            return 0
         contract = Contract.load(args.contract)
         if args.command == "inspect":
             _show_inventory(contract.inventory(), args.format)
@@ -93,7 +113,8 @@ def main(argv: list[str] | None = None) -> int:
 def _show_check(
     contract: Contract, fixture: Fixture, engine_version: str, output_format: str
 ) -> int:
-    operation, assertion = contract.check(fixture)
+    operation, assertions = verify(contract, fixture, imported=True)
+    assertion = primary(assertions)
     if output_format == "json":
         result = report(
             assertion,
@@ -103,6 +124,8 @@ def _show_check(
             case=fixture.case,
             fixture=fixture.filename,
             status=fixture.status,
+            media_type=fixture.media_type,
+            assertions=assertions,
         )
         print(json.dumps(result, indent=2))
     else:
@@ -113,6 +136,12 @@ def _show_check(
         print(
             f"{assertion.reason} Observation: imported fixture, HTTP {fixture.status}."
         )
+        for detail in assertions:
+            if detail is not assertion:
+                print(f"  {detail.verdict} {detail.rule} · {detail.reason}")
+        print(format_counts(counts(assertions)))
+    if assertion.verdict in {"ERROR", "INCONCLUSIVE"}:
+        return 2
     return int(assertion.verdict == "FAIL")
 
 
@@ -174,25 +203,20 @@ def _show_plan(plan: Plan, output_format: str) -> None:
     )
 
 
-def _terminal(value: str) -> str:
-    return "".join(
-        char if char.isprintable() else char.encode("unicode_escape").decode("ascii")
-        for char in value
-    )
-
-
 def _show_scan(
     run: ScanRun, digest: str, engine_version: str, output_format: str
 ) -> None:
+    totals = counts(assertion for case in run.cases for assertion in case.assertions)
     if output_format == "json":
         print(
             json.dumps(
                 {
-                    "schema_version": "1",
+                    "schema_version": "2",
                     "engine_version": engine_version,
                     "run_id": str(uuid4()),
                     "contract_digest": f"sha256:{digest}",
                     **asdict(run),
+                    "counts": totals,
                 },
                 indent=2,
             )
@@ -202,7 +226,10 @@ def _show_scan(
         print(
             f"{case.state} {_operation_name(case.operation)} · {case.case} · {case.reason}"
         )
+        for assertion in case.assertions:
+            print(f"  {assertion.verdict} {assertion.rule} · {assertion.reason}")
     print(
         f"{run.requests_sent} requests sent · "
         f"{run.requests_attempted}/{run.request_budget} attempts"
     )
+    print(format_counts(totals))

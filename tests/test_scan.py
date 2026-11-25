@@ -145,7 +145,7 @@ def test_scan_does_not_follow_redirect_to_another_port(tmp_path, contract):
             result = run_cli(
                 "scan", contract, config(tmp_path, origin), "--format", "json"
             )
-    assert result.returncode == 2
+    assert result.returncode == 1
     assert len(requests) == 1 and not redirected
     data = json.loads(result.stdout)
     assert data["requests_sent"] == len(requests)
@@ -197,6 +197,18 @@ def test_scan_bounds_response_time_and_body(tmp_path, contract, mode):
         if mode == "timeout"
         else ("INCONCLUSIVE", "response_body_limit")
     )
+    report_path = tmp_path / "report.json"
+    report_path.write_text(result.stdout)
+    rendered = run_cli("report", report_path, "--format", "markdown", offline=True)
+    assert rendered.returncode == 0, rendered.stderr
+    assert "live\\_http" in rendered.stdout
+    assert f"{case['state']} 1" in rendered.stdout
+    if mode == "large":
+        assert any(
+            assertion["rule"] == "response.status.documented"
+            and assertion["verdict"] == "PASS"
+            for assertion in case["assertions"]
+        )
 
 
 @pytest.mark.skipif(
