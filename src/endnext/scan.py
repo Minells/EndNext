@@ -4,12 +4,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 from .contract import Contract
-from .evidence import Assertion, Operation
-from .inputs import Fixture, InputError, decode_json_value, walk
+from .evidence import Assertion, Operation, Verdict, primary
+from .inputs import BodyState, Fixture, InputError, Json, decode_json_value, walk
 from .planner import Case, PlanConfig, PlannedCase, build_plan
+from .rules import verify
 from .transport import Acquisition, LoopbackTransport, Target
-
-type State = Literal["PASS", "FAIL", "SKIPPED", "INCONCLUSIVE", "ERROR"]
 
 
 @dataclass(frozen=True)
@@ -17,11 +16,12 @@ class ScanCase:
     case: str
     operation: Operation
     source: Literal["live_http", "imported_fixture"]
-    state: State
+    state: Verdict
     reason: str
     status: int | None = None
     media_type: str | None = None
     assertion: Assertion | None = None
+    assertions: tuple[Assertion, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -81,63 +81,80 @@ def _scan_case(
         "live_http" if case.source == "http" else "imported_fixture"
     )
     if planned.reason is not None:
-        return ScanCase(case.name, operation, source, "SKIPPED", planned.reason)
+        return _skipped(case, operation, source, planned.reason)
     if case.source == "fixture":
-        return ScanCase(case.name, operation, source, "SKIPPED", "offline_fixture")
+        return _skipped(case, operation, source, "offline_fixture")
     request = transport.target.request(case)
     if request is None:
-        return ScanCase(case.name, operation, source, "SKIPPED", "outside_target_scope")
+        return _skipped(case, operation, source, "outside_target_scope")
     capture = transport.acquire(request)
     return _check_capture(contract, operation, case, capture)
 
 
-def _check_capture(
-    contract: Contract, operation: Operation, case: Case, capture: Acquisition
+def _skipped(
+    case: Case,
+    operation: Operation,
+    source: Literal["live_http", "imported_fixture"],
+    reason: str,
 ) -> ScanCase:
-    state: State
-    if capture.problem is not None:
-        state = "SKIPPED"
-        if capture.problem in {"request_timeout", "transport_error"}:
-            state = "ERROR"
-        if capture.problem in {"response_body_limit", "unsupported_content_encoding"}:
-            state = "INCONCLUSIVE"
+    assertion = Assertion(
+        "case.preconditions", "SKIPPED", "An eligible live case.", reason
+    )
+    return ScanCase(
+        case.name,
+        operation,
+        source,
+        "SKIPPED",
+        reason,
+        assertion=assertion,
+        assertions=(assertion,),
+    )
+
+
+def _check_capture(
+    contract: Contract,
+    operation: Operation,
+    case: Case,
+    capture: Acquisition,
+) -> ScanCase:
+    if capture.status is None:
+        problem = capture.problem or "response_status_missing"
+        state: Verdict = (
+            "SKIPPED"
+            if problem
+            in {
+                "outside_target_scope",
+                "request_budget_exhausted",
+                "run_deadline_exhausted",
+            }
+            else "ERROR"
+        )
+        assertion = Assertion(
+            "http.acquire", state, "A bounded HTTP observation.", problem
+        )
         return ScanCase(
             case.name,
             operation,
             "live_http",
             state,
-            capture.problem,
-            capture.status,
-            capture.media_type,
+            problem,
+            assertion=assertion,
+            assertions=(assertion,),
         )
-    if capture.status is None:
-        return ScanCase(
-            case.name, operation, "live_http", "ERROR", "response_status_missing"
-        )
-    if capture.media_type != "application/json" or capture.body is None:
-        return ScanCase(
-            case.name,
-            operation,
-            "live_http",
-            "INCONCLUSIVE",
-            "json_body_unavailable",
-            capture.status,
-            capture.media_type,
-        )
-    try:
-        body = decode_json_value(capture.body, "response")
-        for _ in walk(body, "response"):
-            pass
-    except InputError:
-        return ScanCase(
-            case.name,
-            operation,
-            "live_http",
-            "INCONCLUSIVE",
-            "invalid_json_body",
-            capture.status,
-            capture.media_type,
-        )
+
+    body: Json = None
+    body_state: BodyState = "absent"
+    if capture.problem is not None:
+        body_state = "truncated"
+    elif capture.body:
+        body_state = "complete"
+        if capture.media_type == "application/json":
+            try:
+                body = decode_json_value(capture.body, "response")
+                for _ in walk(body, "response"):
+                    pass
+            except InputError:
+                body_state = "invalid"
     fixture = Fixture(
         case.name,
         operation.method.lower(),
@@ -146,36 +163,45 @@ def _check_capture(
         capture.status,
         body,
         "",
+        capture.media_type,
+        body_state,
+        case.expected_status,
     )
     try:
-        _, assertion = contract.check(fixture)
+        _, assertions = verify(contract, fixture, imported=False)
     except InputError:
-        return ScanCase(
-            case.name,
-            operation,
-            "live_http",
-            "INCONCLUSIVE",
-            "response_schema_unavailable",
-            capture.status,
-            capture.media_type,
+        assertions = (
+            Assertion(
+                "response.body.schema",
+                "INCONCLUSIVE",
+                "A documented response schema.",
+                "response_schema_unavailable",
+            ),
         )
     except Exception:
-        return ScanCase(
-            case.name,
-            operation,
-            "live_http",
-            "ERROR",
-            "verification_error",
-            capture.status,
-            capture.media_type,
+        assertions = (
+            Assertion(
+                "http.verify",
+                "ERROR",
+                "A completed verification.",
+                "verification_error",
+            ),
         )
+    if capture.problem in {"request_timeout", "transport_error"}:
+        assertions += (
+            Assertion(
+                "http.acquire", "ERROR", "A bounded HTTP observation.", capture.problem
+            ),
+        )
+    selected = primary(assertions)
     return ScanCase(
         case.name,
         operation,
         "live_http",
-        assertion.verdict,
-        assertion.reason,
+        selected.verdict,
+        capture.problem or selected.reason,
         capture.status,
         capture.media_type,
-        assertion,
+        selected,
+        assertions,
     )

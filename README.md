@@ -64,3 +64,18 @@ endnext scan examples/items.openapi.json suite.toml --format json
 ```
 
 Su POSIX, `scan` esegue solo i GET positivi e anonimi selezionati. L'origine richiede un indirizzo IP letterale di loopback e una porta esplicita. Il trasporto limita l'esecuzione a una richiesta al secondo, 20 tentativi, 5 secondi per richiesta, 60 secondi complessivi di acquisizione e 1 MiB di body conservato per risposta. Redirect, retry, proxy d'ambiente e propagazione dei cookie sono disattivati. HTTPS verifica il certificato. Il report distingue i tentativi dagli invii completati degli header HTTP. Lo staging è fuori dal perimetro del trasporto corrente. [Trasporto HTTPX](https://www.python-httpx.org/advanced/transports/) · [Tracciamento degli invii HTTP](https://www.python-httpx.org/advanced/extensions/#trace)
+
+## Asserzioni ed evidenze
+
+`check` e `scan` valutano separatamente status documentato, media type, schema ed eventuale status atteso. Una risposta incompleta mantiene le asserzioni supportate dai dati disponibili. Nelle fixture, `body_state` può indicare `absent`, `truncated` o `invalid`. Ometti `body` in questi casi. Uno status HTTP 204 può essere registrato senza body o media type.
+
+Per una fixture con `identity: "anonymous"`, `expected_access` permette di confrontare l'osservazione importata con l'esito dichiarato. Con `sensitive: true`, `expected_cache_directive` valuta la presenza del nome di direttiva in `headers.Cache-Control`. La demo produce asserzioni di schema superate, una discrepanza di accesso, un avviso relativo alla cache e uno skip per aspettativa HTTP assente.
+
+```sh
+.venv/bin/endnext check examples/items.openapi.json examples/item-policy-fail.json --format json > evidence.json
+.venv/bin/endnext report evidence.json
+.venv/bin/endnext report evidence.json --format markdown
+.venv/bin/python -m pytest -q tests/test_reports.py tests/test_scan.py
+```
+
+Il primo comando esce con codice 1, con evidenza valida in `evidence.json`. Il report JSON v2 conserva tutte le asserzioni. `report` rilegge anche i documenti v1 e mantiene verdetti, provenienza e conteggi nei formati terminale e Markdown. I casi di body parziale e timeout nella suite producono rispettivamente `INCONCLUSIVE` e `ERROR`, con codice 2.

@@ -1,0 +1,14 @@
+{
+  "case": "item-policy-example",
+  "method": "GET",
+  "path_template": "/items/{id}",
+  "path_parameters": {"id": "sample"},
+  "status": 200,
+  "media_type": "application/json",
+  "body": {"quantity": 7},
+  "identity": "anonymous",
+  "expected_access": false,
+  "sensitive": true,
+  "expected_cache_directive": "no-store",
+  "headers": {"Cache-Control": "private"}
+}

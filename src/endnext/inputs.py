@@ -6,7 +6,7 @@ import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 type Json = None | bool | int | float | str | list[Json] | dict[str, Json]
 type JsonObject = dict[str, Json]
@@ -17,6 +17,9 @@ MAX_NODES = 100_000
 METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
 PATH_PARAMETER = re.compile(r"\{([^{}]+)\}")
 CASE_NAME = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}")
+MEDIA_TYPE = re.compile(r"[a-zA-Z0-9!#$&^_.+-]+/[a-zA-Z0-9!#$&^_.+-]+")
+CACHE_DIRECTIVE = re.compile(r"[a-zA-Z0-9_-]{1,64}")
+type BodyState = Literal["complete", "absent", "invalid", "truncated"]
 
 
 class InputError(Exception):
@@ -101,6 +104,13 @@ class Fixture:
     status: int
     body: Json
     filename: str
+    media_type: str | None = "application/json"
+    body_state: BodyState = "complete"
+    expected_status: int | None = None
+    anonymous: bool = False
+    expected_access: bool | None = None
+    expected_cache_directive: str | None = None
+    cache_control: str | None = None
 
     @classmethod
     def load(cls, path: Path) -> "Fixture":
@@ -140,12 +150,63 @@ class Fixture:
             raise InputError(
                 "The fixture requires an integer HTTP status from 100 to 599."
             )
-        if not isinstance(media_type, str) or media_type.lower() != "application/json":
-            raise InputError("The fixture media type must be application/json.")
-        if "body" not in obj:
+        body_state = obj.get(
+            "body_state",
+            "absent" if status == 204 and "body" not in obj else "complete",
+        )
+        if body_state not in ("complete", "absent", "invalid", "truncated"):
+            raise InputError(
+                "Fixture body_state must be complete, absent, invalid or truncated."
+            )
+        if media_type is not None and (
+            not isinstance(media_type, str) or not MEDIA_TYPE.fullmatch(media_type)
+        ):
+            raise InputError(
+                "The fixture media type must be a media type without parameters."
+            )
+        if body_state == "complete" and ("body" not in obj or media_type is None):
             raise InputError(
                 "The fixture requires a body field containing the observed JSON."
             )
+        if body_state != "complete" and "body" in obj:
+            raise InputError("The fixture body field requires body_state complete.")
+        expectation = obj.get("expected_status")
+        if expectation is not None and (
+            type(expectation) is not int or not 100 <= expectation <= 599
+        ):
+            raise InputError(
+                "Fixture expected_status must be an integer from 100 to 599."
+            )
+        identity = obj.get("identity")
+        access = obj.get("expected_access")
+        if identity not in (None, "anonymous", "authenticated") or (
+            access is not None and type(access) is not bool
+        ):
+            raise InputError(
+                "Use an explicit fixture identity and a boolean expected_access."
+            )
+        cache = obj.get("expected_cache_directive")
+        sensitive = obj.get("sensitive", False)
+        if type(sensitive) is not bool or (
+            cache is not None
+            and (not isinstance(cache, str) or not CACHE_DIRECTIVE.fullmatch(cache))
+        ):
+            raise InputError(
+                "Use a boolean sensitive flag and an HTTP cache directive name."
+            )
+        headers = obj.get("headers", {})
+        if not isinstance(headers, dict) or any(
+            not isinstance(value, str) for value in headers.values()
+        ):
+            raise InputError("Fixture headers must be an object of string values.")
+        cache_control = next(
+            (
+                str(value)
+                for key, value in headers.items()
+                if key.lower() == "cache-control"
+            ),
+            None,
+        )
 
         return cls(
             case,
@@ -153,6 +214,13 @@ class Fixture:
             template,
             {key: str(value) for key, value in parameters.items()},
             status,
-            obj["body"],
+            obj.get("body"),
             path.name,
+            media_type.lower() if isinstance(media_type, str) else None,
+            cast(BodyState, body_state),
+            expectation,
+            identity == "anonymous",
+            access,
+            cache.lower() if sensitive and isinstance(cache, str) else None,
+            cache_control,
         )

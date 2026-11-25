@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from .inputs import MAX_BYTES, PATH_PARAMETER, InputError
+from .inputs import MAX_BYTES, MEDIA_TYPE, PATH_PARAMETER, InputError
 from .planner import MAX_REQUESTS, Case
 
 REQUEST_TIMEOUT = 5.0
@@ -200,7 +200,7 @@ class LoopbackTransport:
                         .strip()
                         .lower()
                     )
-                    media_type = mime if mime == "application/json" else None
+                    media_type = mime if MEDIA_TYPE.fullmatch(mime) else None
                     encoding = (
                         response.headers.get("Content-Encoding", "identity")
                         .strip()

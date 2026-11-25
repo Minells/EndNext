@@ -191,6 +191,25 @@ class Contract:
                 "The OpenAPI contract has an invalid schema or reference."
             ) from None
 
+    def response_profile(self, fixture: Fixture) -> tuple[Operation, list[str] | None]:
+        spec = self.api.spec / "paths" / fixture.path_template / fixture.method
+        if not spec.exists():
+            raise InputError("The fixture operation is absent from the contract.")
+        operation = _operation(spec, fixture.method, fixture.path_template)
+        responses = spec / "responses"
+        if not responses.exists():
+            return operation, None
+        try:
+            return operation, _media_types(
+                ResponseFinder(responses).find(str(fixture.status))
+            )
+        except ResponseNotFound:
+            return operation, None
+        except (SchemaError, Unresolvable, RecursionError):
+            raise InputError(
+                "The OpenAPI contract has an invalid schema or reference."
+            ) from None
+
     def _check(self, fixture: Fixture) -> tuple[Operation, Assertion]:
         spec = self.api.spec / "paths" / fixture.path_template / fixture.method
         if not spec.exists():
