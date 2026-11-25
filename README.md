@@ -99,3 +99,12 @@ Salva i report JSON di due esecuzioni della stessa suite e confrontali offline. 
 | Input non valido, confronto senza controlli confrontabili o verifica incompleta | `2` |
 
 Gli avvisi e i FAIL già presenti sono visibili nel riepilogo e non bloccano da soli il confronto.
+
+## Test e integrazione in main
+
+```sh
+.venv/bin/python -m pip install -e '.[dev]'
+.venv/bin/python -m pytest --cov --cov-report=term-missing --cov-report=xml
+```
+
+La soglia del 96% combina righe e rami e include le invocazioni della CLI in processi separati. Per integrare un branch, apri una pull request verso `main` e attendi il check obbligatorio **EndNext merge gate**. La CI esegue Ruff, mypy, la suite con coverage e una prova da wheel e sdist su Linux e macOS con Python 3.12. I report di copertura XML sono disponibili tra gli artefatti del workflow.
