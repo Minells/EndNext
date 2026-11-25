@@ -2,6 +2,7 @@
 
 import math
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -31,6 +32,7 @@ class PlanConfig:
     selected: frozenset[OperationKey]
     cases: tuple[Case, ...]
     request_budget: int
+    target: object = None
 
     @classmethod
     def load(cls, path: Path) -> "PlanConfig":
@@ -62,7 +64,7 @@ class PlanConfig:
         )
         if len({case.name for case in parsed}) != len(parsed):
             raise InputError("The plan uses a case name more than once.")
-        return cls(selected, parsed, budget)
+        return cls(selected, parsed, budget, data.get("target"))
 
 
 def _parse_operation(value: object) -> OperationKey:
@@ -179,7 +181,12 @@ class Plan:
     candidate_assertions: int
 
 
-def build_plan(inventory: Inventory, config: PlanConfig) -> Plan:
+def build_plan(
+    inventory: Inventory,
+    config: PlanConfig,
+    *,
+    allows_http: Callable[[Case], bool] | None = None,
+) -> Plan:
     known = {
         (item.operation.method, item.operation.path_template): item
         for item in inventory.operations
@@ -206,7 +213,7 @@ def build_plan(inventory: Inventory, config: PlanConfig) -> Plan:
         cases = []
         for case in by_operation.get(key, []):
             reason = _skip_reason(
-                case, selected, anonymous, used < config.request_budget
+                case, selected, anonymous, used < config.request_budget, allows_http
             )
             cost = int(case.source == "http" and reason is None)
             rules: tuple[CandidateRule, ...] = (_STATUS, _MEDIA, _SCHEMA)
@@ -243,7 +250,11 @@ def build_plan(inventory: Inventory, config: PlanConfig) -> Plan:
 
 
 def _skip_reason(
-    case: Case, selected: bool, anonymous: bool, has_budget: bool
+    case: Case,
+    selected: bool,
+    anonymous: bool,
+    has_budget: bool,
+    allows_http: Callable[[Case], bool] | None,
 ) -> str | None:
     if not selected:
         return "operation_not_selected"
@@ -272,6 +283,8 @@ def _skip_reason(
         or "" in case.path_parameters.values()
     ):
         return "path_parameters_missing_or_invalid"
+    if allows_http is not None and not allows_http(case):
+        return "outside_target_scope"
     if not has_budget:
         return "request_budget_exhausted"
     return None

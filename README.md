@@ -46,3 +46,21 @@ Il caricamento accetta file locali fino a 1 MiB, riferimenti nello stesso docume
 In `select` indica le operazioni usando metodo e path template. Ogni voce `[[cases]]` ha un nome univoco, un'operazione e una sorgente. Per `source = "fixture"`, il percorso della fixture è relativo al TOML. Per `source = "http"`, specifica un GET positivo, lo status atteso e gli eventuali parametri scalari di path e query. Il budget HTTP va da 0 a 20 e parte da 0.
 
 `plan` elenca anche le operazioni senza casi. Mostra la sicurezza effettiva, il motivo degli skip, il costo in richieste e le asserzioni candidate con le relative condizioni. Le richieste sono stimate e le asserzioni candidate non costituiscono risultati di verifica. A parità di input il piano è identico, anche in assenza di rete.
+
+## Verifica HTTP su loopback
+
+Per usare `scan`, aggiungi al TOML la destinazione di un servizio di prova locale per cui hai autorizzazione. Il path del contratto deve ricadere nel prefisso autorizzato.
+
+```toml
+[target]
+authorized = true
+origin = "http://127.0.0.1:8000"
+path_prefix = "/items"
+```
+
+```sh
+endnext plan examples/items.openapi.json suite.toml
+endnext scan examples/items.openapi.json suite.toml --format json
+```
+
+Su POSIX, `scan` esegue solo i GET positivi e anonimi selezionati. L'origine richiede un indirizzo IP letterale di loopback e una porta esplicita. Il trasporto limita l'esecuzione a una richiesta al secondo, 20 tentativi, 5 secondi per richiesta, 60 secondi complessivi di acquisizione e 1 MiB di body conservato per risposta. Redirect, retry, proxy d'ambiente e propagazione dei cookie sono disattivati. HTTPS verifica il certificato. Il report distingue i tentativi dagli invii completati degli header HTTP. Lo staging è fuori dal perimetro del trasporto corrente. [Trasporto HTTPX](https://www.python-httpx.org/advanced/transports/) · [Tracciamento degli invii HTTP](https://www.python-httpx.org/advanced/extensions/#trace)
