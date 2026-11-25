@@ -1,0 +1,9 @@
+{
+  "case": "item-detail",
+  "method": "GET",
+  "path_template": "/items/{id}",
+  "path_parameters": {"id": "sample"},
+  "status": 200,
+  "media_type": "application/json",
+  "body": {"quantity": "ENDNEXT_DO_NOT_PRINT_89622a2c"}
+}
