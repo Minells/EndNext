@@ -7,11 +7,14 @@ from dataclasses import asdict
 from importlib.metadata import version
 from pathlib import Path
 from typing import NoReturn
+from uuid import uuid4
 
 from .contract import Contract
 from .evidence import Inventory, Operation, report
 from .inputs import Fixture, InputError
 from .planner import Plan, PlanConfig, build_plan
+from .scan import ScanRun, scan
+from .transport import Target
 
 
 class _Parser(argparse.ArgumentParser):
@@ -37,7 +40,10 @@ def main(argv: list[str] | None = None) -> int:
     plan = commands.add_parser(
         "plan", help="Plan local cases and estimate their request cost."
     )
-    for command in (check, inspect, plan):
+    scan_command = commands.add_parser(
+        "scan", help="Check explicitly authorized loopback GET cases."
+    )
+    for command in (check, inspect, plan, scan_command):
         command.add_argument(
             "contract", type=Path, help="Local OpenAPI 3.1 JSON or YAML document"
         )
@@ -45,7 +51,8 @@ def main(argv: list[str] | None = None) -> int:
             "--format", choices=("text", "json"), default="text", help="Output format"
         )
     check.add_argument("fixture", type=Path, help="Local JSON response fixture")
-    plan.add_argument("config", type=Path, help="Local TOML plan configuration")
+    for command in (plan, scan_command):
+        command.add_argument("config", type=Path, help="Local TOML plan configuration")
     args = parser.parse_args(argv)
 
     try:
@@ -54,9 +61,21 @@ def main(argv: list[str] | None = None) -> int:
             _show_inventory(contract.inventory(), args.format)
             return 0
         if args.command == "plan":
-            result = build_plan(contract.inventory(), PlanConfig.load(args.config))
+            config = PlanConfig.load(args.config)
+            target = Target.load(config.target) if config.target is not None else None
+            result = build_plan(
+                contract.inventory(),
+                config,
+                allows_http=(lambda case: target.request(case) is not None)
+                if target is not None
+                else None,
+            )
             _show_plan(result, args.format)
             return 0
+        if args.command == "scan":
+            run = scan(contract, PlanConfig.load(args.config))
+            _show_scan(run, contract.digest, engine_version, args.format)
+            return run.exit_code
         return _show_check(
             contract, Fixture.load(args.fixture), engine_version, args.format
         )
@@ -159,4 +178,31 @@ def _terminal(value: str) -> str:
     return "".join(
         char if char.isprintable() else char.encode("unicode_escape").decode("ascii")
         for char in value
+    )
+
+
+def _show_scan(
+    run: ScanRun, digest: str, engine_version: str, output_format: str
+) -> None:
+    if output_format == "json":
+        print(
+            json.dumps(
+                {
+                    "schema_version": "1",
+                    "engine_version": engine_version,
+                    "run_id": str(uuid4()),
+                    "contract_digest": f"sha256:{digest}",
+                    **asdict(run),
+                },
+                indent=2,
+            )
+        )
+        return
+    for case in run.cases:
+        print(
+            f"{case.state} {_operation_name(case.operation)} · {case.case} · {case.reason}"
+        )
+    print(
+        f"{run.requests_sent} requests sent · "
+        f"{run.requests_attempted}/{run.request_budget} attempts"
     )

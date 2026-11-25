@@ -72,7 +72,7 @@ def walk(value: Json, label: str) -> Iterator[Json]:
             stack.extend((child, depth + 1) for child in node)
 
 
-def decode_json(data: bytes, label: str) -> JsonObject:
+def decode_json_value(data: bytes, label: str) -> Json:
     try:
         value = json.loads(
             data.decode("utf-8-sig"),
@@ -82,9 +82,14 @@ def decode_json(data: bytes, label: str) -> JsonObject:
         )
     except (ValueError, RecursionError):
         raise InputError(f"The {label} contains invalid UTF-8 JSON.") from None
+    return cast(Json, value)
+
+
+def decode_json(data: bytes, label: str) -> JsonObject:
+    value = decode_json_value(data, label)
     if not isinstance(value, dict):
         raise InputError(f"The {label} must be a JSON object.")
-    return cast(JsonObject, value)
+    return value
 
 
 @dataclass(frozen=True)
