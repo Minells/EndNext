@@ -11,6 +11,7 @@ from typing import NoReturn
 from .contract import Contract
 from .evidence import Inventory, Operation, report
 from .inputs import Fixture, InputError
+from .planner import Plan, PlanConfig, build_plan
 
 
 class _Parser(argparse.ArgumentParser):
@@ -33,7 +34,10 @@ def main(argv: list[str] | None = None) -> int:
     inspect = commands.add_parser(
         "inspect", help="List the operations in a local contract."
     )
-    for command in (check, inspect):
+    plan = commands.add_parser(
+        "plan", help="Plan local cases and estimate their request cost."
+    )
+    for command in (check, inspect, plan):
         command.add_argument(
             "contract", type=Path, help="Local OpenAPI 3.1 JSON or YAML document"
         )
@@ -41,12 +45,17 @@ def main(argv: list[str] | None = None) -> int:
             "--format", choices=("text", "json"), default="text", help="Output format"
         )
     check.add_argument("fixture", type=Path, help="Local JSON response fixture")
+    plan.add_argument("config", type=Path, help="Local TOML plan configuration")
     args = parser.parse_args(argv)
 
     try:
         contract = Contract.load(args.contract)
         if args.command == "inspect":
             _show_inventory(contract.inventory(), args.format)
+            return 0
+        if args.command == "plan":
+            result = build_plan(contract.inventory(), PlanConfig.load(args.config))
+            _show_plan(result, args.format)
             return 0
         return _show_check(
             contract, Fixture.load(args.fixture), engine_version, args.format
@@ -113,6 +122,37 @@ def _operation_name(operation: Operation) -> str:
     if operation.operation_id:
         name += f" ({operation.operation_id})"
     return _terminal(name)
+
+
+def _show_plan(plan: Plan, output_format: str) -> None:
+    if output_format == "json":
+        print(json.dumps({"schema_version": "1", **asdict(plan)}, indent=2))
+        return
+    for entry in plan.operations:
+        selection = "selected" if entry.selected else "excluded"
+        access = (
+            "anonymous allowed" if entry.allows_anonymous else "authentication required"
+        )
+        print(f"{_operation_name(entry.operation)} ({selection}, {access})")
+        if not entry.cases:
+            print("  No cases configured.")
+        for case in entry.cases:
+            if case.reason is not None:
+                print(
+                    f"  SKIPPED {case.name} [{case.source}] · {case.reason.replace('_', ' ')}"
+                )
+            else:
+                print(
+                    f"  PLANNED {case.name} [{case.source}] · "
+                    f"{case.request_cost} requests, {len(case.candidate_rules)} candidate assertions"
+                )
+                for rule in case.candidate_rules:
+                    print(f"    {rule.rule} · {rule.condition}")
+    print(
+        f"{len(plan.operations)} operations · {plan.cases_planned} planned cases · "
+        f"{plan.cases_skipped} skipped · {plan.requests_planned}/{plan.request_budget} requests · "
+        f"{plan.candidate_assertions} candidate assertions"
+    )
 
 
 def _terminal(value: str) -> str:

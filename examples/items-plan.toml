@@ -1,0 +1,21 @@
+select = ["GET /items/{id}"]
+request_budget = 1
+
+[[cases]]
+name = "imported-item"
+operation = "GET /items/{id}"
+source = "fixture"
+fixture = "item-pass.json"
+expected_status = 200
+
+[[cases]]
+name = "live-item"
+operation = "GET /items/{id}"
+source = "http"
+expected_status = 200
+path_parameters = { id = "sample" }
+
+[[cases]]
+name = "missing-item"
+operation = "GET /items/{id}"
+source = "fixture"

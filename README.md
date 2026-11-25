@@ -36,3 +36,13 @@ La demo verifica `GET /items/{id}`. Il secondo caso indica `response.body.schema
 Il report conserva operazione, provenienza, status e tipo JSON richiesto per spiegare un'eventuale discrepanza. Il body, i valori dei parametri e i messaggi grezzi del validatore restano fuori dal report. Usa un nome di caso e di file adatto a essere condiviso.
 
 Il caricamento accetta file locali fino a 1 MiB, riferimenti nello stesso documento e YAML compatibile con JSON. In YAML racchiudi tra virgolette le chiavi numeriche, come `'200'`. `check` verifica una risposta JSON documentata per volta. `inspect` mostra separatamente le dichiarazioni di sicurezza del contratto e delle operazioni. [Decisione sul validatore e limiti](docs/VALIDATOR.md)
+
+## Piano offline
+
+```sh
+.venv/bin/endnext plan examples/items.openapi.json examples/items-plan.toml --format json
+```
+
+In `select` indica le operazioni usando metodo e path template. Ogni voce `[[cases]]` ha un nome univoco, un'operazione e una sorgente. Per `source = "fixture"`, il percorso della fixture è relativo al TOML. Per `source = "http"`, specifica un GET positivo, lo status atteso e gli eventuali parametri scalari di path e query. Il budget HTTP va da 0 a 20 e parte da 0.
+
+`plan` elenca anche le operazioni senza casi. Mostra la sicurezza effettiva, il motivo degli skip, il costo in richieste e le asserzioni candidate con le relative condizioni. Le richieste sono stimate e le asserzioni candidate non costituiscono risultati di verifica. A parità di input il piano è identico, anche in assenza di rete.
