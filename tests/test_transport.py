@@ -109,7 +109,9 @@ def test_last_dispatch_check_keeps_out_of_scope_requests_off_the_transport(
         pytest.fail("Rejected requests must never reach HTTPX")
 
     monkeypatch.setattr(client.client, "send", must_not_send)
-    result = client.acquire(httpx.Request(method, url, headers=headers))
+    result = client.acquire(
+        httpx.Request(method, url, headers=headers), bearer_token="test-sentinel"
+    )
     assert result == Acquisition(problem="outside_target_scope")
     assert client.attempted == client.sent == 0
 

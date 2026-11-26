@@ -38,9 +38,10 @@ class CheckKey:
     case: str
     source: str
     rule: str
+    auth_profile: str = ""
 
     def fingerprint(self, field: str | None) -> str:
-        parts = (
+        parts: tuple[str | None, ...] = (
             self.method,
             self.path_template,
             self.case,
@@ -48,6 +49,8 @@ class CheckKey:
             self.rule,
             field,
         )
+        if self.auth_profile:
+            parts += (self.auth_profile,)
         encoded = json.dumps(parts, ensure_ascii=True, separators=(",", ":")).encode(
             "ascii"
         )
@@ -96,10 +99,11 @@ def _checks(report: SavedReport) -> dict[CheckKey, Assertion]:
                 case.name,
                 case.source,
                 assertion.rule,
+                case.auth_profile or "",
             )
             if key in indexed:
                 raise InputError(
-                    "A report contains duplicate assertions for the same case, operation, source and rule."
+                    "A report contains duplicate assertions for the same case, operation, source, rule and profile."
                 )
             indexed[key] = assertion
     return indexed
@@ -190,10 +194,11 @@ def render_diff(result: BaselineDiff, *, output_format: str) -> str:
         if field is None and change.baseline:
             field = change.baseline.field
         location = f" at {field or '(root)'}" if field is not None else ""
+        source = f"{key.source}, {key.auth_profile}" if key.auth_profile else key.source
         lines.append(
             safe_terminal(
                 f"{change.kind.replace('_', ' ').upper()} {key.method} {key.path_template} · "
-                f"{key.case} [{key.source}] · {key.rule}{location} · {before} → {after}"
+                f"{key.case} [{source}] · {key.rule}{location} · {before} → {after}"
             )
         )
     if not result.compared_checks:

@@ -66,11 +66,43 @@ endnext plan examples/items.openapi.json suite.toml
 endnext scan examples/items.openapi.json suite.toml --format json
 ```
 
-Su POSIX, `scan` esegue solo i GET positivi e anonimi selezionati. L'origine richiede un indirizzo IP letterale di loopback e una porta esplicita. Il trasporto limita l'esecuzione a una richiesta al secondo, 20 tentativi, 5 secondi per richiesta, 60 secondi complessivi di acquisizione e 1 MiB di body conservato per risposta. Redirect, retry, proxy d'ambiente e propagazione dei cookie sono disattivati. HTTPS verifica il certificato. Il report distingue i tentativi dagli invii completati degli header HTTP. Lo staging è fuori dal perimetro del trasporto corrente. [Trasporto HTTPX](https://www.python-httpx.org/advanced/transports/) · [Tracciamento degli invii HTTP](https://www.python-httpx.org/advanced/extensions/#trace)
+Su POSIX, `scan` esegue i GET selezionati, con casi di contratto anonimi o casi di autorizzazione con un profilo esplicito. L'origine richiede un indirizzo IP letterale di loopback e una porta esplicita. Il trasporto limita l'esecuzione a una richiesta al secondo, 20 tentativi, 5 secondi per richiesta, 60 secondi complessivi di acquisizione e 1 MiB di body conservato per risposta. Redirect, retry, proxy d'ambiente e propagazione dei cookie sono disattivati. HTTPS verifica il certificato. Il report distingue i tentativi dagli invii completati degli header HTTP. Lo staging è fuori dal perimetro del trasporto corrente. [Trasporto HTTPX](https://www.python-httpx.org/advanced/transports/) · [Tracciamento degli invii HTTP](https://www.python-httpx.org/advanced/extensions/#trace)
+
+### Demo di autorizzazione con due identità
+
+Nella [suite demo](examples/authorization-plan.toml), ogni profilo `[auth_profiles.<nome>]` dichiara `bearer_env`, il nome della variabile da cui `scan` legge il token. Ogni caso di autorizzazione seleziona un `auth_profile`, una risorsa nota e `expected_access = "allow"` o `"deny"`. I casi di contratto usano `expected_status`. `plan` mostra profilo e aspettativa senza leggere i valori delle credenziali. Nei report compare il nome del profilo.
+
+Dal checkout, avvia la demo in un terminale con due token sintetici.
+
+```sh
+export ENDNEXT_DEMO_ALICE_TOKEN=demo-alice-local
+export ENDNEXT_DEMO_BOB_TOKEN=demo-bob-local
+.venv/bin/python examples/authorization_demo.py
+```
+
+In un secondo terminale, esporta gli stessi token ed esegui la suite.
+
+```sh
+export ENDNEXT_DEMO_ALICE_TOKEN=demo-alice-local
+export ENDNEXT_DEMO_BOB_TOKEN=demo-bob-local
+.venv/bin/endnext plan examples/authorization.openapi.json examples/authorization-plan.toml
+.venv/bin/endnext scan examples/authorization.openapi.json examples/authorization-plan.toml --format json > current.json
+.venv/bin/endnext report current.json
+```
+
+| Caso | Aspettativa | Osservazione | Verdetto |
+| --- | --- | --- | --- |
+| Alice sul documento di Alice | Accesso consentito | HTTP 204 | `PASS` |
+| Bob sul documento di Alice | Accesso negato | HTTP 403 | `PASS` |
+| Bob sul documento di Bob | Accesso consentito | HTTP 403 | `FAIL` |
+
+Il piano prevede tre richieste. `scan` ne invia tre ed esce con codice `1`. Per produrre una baseline, riavvia lo stesso servizio con `--healthy` e ripeti `scan` salvando `baseline.json`. Il caso di Bob sul proprio documento restituisce HTTP 204 e `scan` esce con codice `0`. `endnext diff baseline.json current.json` segnala un nuovo FAIL e restituisce `1`.
+
+L'asserzione `security.authenticated_access` tratta un 2xx come accesso consentito e un 403 come negato. Un 401, uno status ambiguo o una risposta parziale per limite di lettura danno `INCONCLUSIVE`. Una credenziale assente o un caso escluso danno `SKIPPED`. Un token malformato o una richiesta interrotta per timeout o errore di trasporto danno `ERROR`. `scan` restituisce `2` se un caso di autorizzazione è saltato, inconcludente o in errore, anche se altri casi hanno prodotto risultati. Gli esiti restano visibili nel report.
 
 ## Asserzioni ed evidenze
 
-`check` e `scan` valutano separatamente status documentato, media type, schema ed eventuale status atteso. Una risposta incompleta mantiene le asserzioni supportate dai dati disponibili. Nelle fixture, `body_state` può indicare `absent`, `truncated` o `invalid`. Ometti `body` in questi casi. Uno status HTTP 204 può essere registrato senza body o media type.
+`check` e i casi di contratto di `scan` valutano separatamente status documentato, media type, schema ed eventuale status atteso. Una risposta incompleta mantiene le asserzioni supportate dai dati disponibili. Nelle fixture, `body_state` può indicare `absent`, `truncated` o `invalid`. Ometti `body` in questi casi. Uno status HTTP 204 può essere registrato senza body o media type.
 
 Per una fixture con `identity: "anonymous"`, `expected_access` permette di confrontare l'osservazione importata con l'esito dichiarato. Con `sensitive: true`, `expected_cache_directive` valuta la presenza del nome di direttiva in `headers.Cache-Control`. La demo produce asserzioni di schema superate, una discrepanza di accesso, un avviso relativo alla cache e uno skip per aspettativa HTTP assente.
 
@@ -93,7 +125,7 @@ Salva i report JSON di due esecuzioni della stessa suite e confrontali offline. 
 .venv/bin/endnext diff baseline.json current.json --format json
 ```
 
-`diff` legge report di `check` e `scan` v1 e v2. Abbina metodo, path template, nome del caso, tipo di provenienza e regola. Il fingerprint include anche la posizione del campo, così un FAIL che si sposta su un altro campo emerge come nuovo. Un PASS della stessa regola conferma la risoluzione. Se un controllo già eseguito risulta assente, saltato o inconcludente, appare come non verificato. Mantieni stabili i nomi dei casi tra le esecuzioni.
+`diff` legge report di `check` e `scan` v1 e v2. Abbina metodo, path template, nome del caso, tipo di provenienza, regola e profilo di autenticazione quando presente. Il fingerprint include anche la posizione del campo, così un FAIL che si sposta su un altro campo emerge come nuovo. Un PASS della stessa regola conferma la risoluzione. Se un controllo già eseguito risulta assente, saltato o inconcludente, appare come non verificato. Mantieni stabili i nomi di casi e profili tra le esecuzioni. Usa un nuovo nome di caso quando cambi risorsa o aspettativa e un nuovo nome di profilo quando cambi identità.
 
 | Esito del confronto | Codice di uscita |
 | --- | --- |

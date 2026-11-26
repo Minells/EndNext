@@ -1,0 +1,37 @@
+request_budget = 3
+select = ["GET /documents/{id}"]
+
+[target]
+authorized = true
+origin = "http://127.0.0.1:8765"
+path_prefix = "/documents"
+
+[auth_profiles.alice]
+bearer_env = "ENDNEXT_DEMO_ALICE_TOKEN"
+
+[auth_profiles.bob]
+bearer_env = "ENDNEXT_DEMO_BOB_TOKEN"
+
+[[cases]]
+name = "alice-own-document"
+operation = "GET /documents/{id}"
+source = "http"
+auth_profile = "alice"
+expected_access = "allow"
+path_parameters = { id = "alice-note" }
+
+[[cases]]
+name = "bob-other-document"
+operation = "GET /documents/{id}"
+source = "http"
+auth_profile = "bob"
+expected_access = "deny"
+path_parameters = { id = "alice-note" }
+
+[[cases]]
+name = "bob-own-document"
+operation = "GET /documents/{id}"
+source = "http"
+auth_profile = "bob"
+expected_access = "allow"
+path_parameters = { id = "bob-note" }
