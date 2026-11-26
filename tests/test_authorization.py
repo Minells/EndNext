@@ -1,8 +1,7 @@
 import json
-import subprocess
-import sys
 from contextlib import contextmanager
-from select import select
+from http.server import ThreadingHTTPServer
+from threading import Thread
 
 import pytest
 from test_check import EXAMPLES, run_cli
@@ -10,6 +9,7 @@ from test_scan import listener
 
 from endnext.inputs import InputError
 from endnext.planner import PlanConfig
+from examples.authorization_demo import handler_for
 
 CONTRACT = EXAMPLES / "authorization.openapi.json"
 SETTINGS = (EXAMPLES / "authorization-plan.toml").read_text(encoding="utf-8")
@@ -25,20 +25,18 @@ def credentials(monkeypatch):
 
 
 @contextmanager
-def demo(*args):
-    with subprocess.Popen(
-        [sys.executable, str(EXAMPLES / "authorization_demo.py"), "--port", "0", *args],
-        stdout=subprocess.PIPE,
-        text=True,
-    ) as process:
+def demo(*, healthy=False):
+    identities = {f"Bearer {ALICE}": "alice", f"Bearer {BOB}": "bob"}
+    with ThreadingHTTPServer(
+        ("127.0.0.1", 0), handler_for(identities, healthy=healthy)
+    ) as server:
+        thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.02})
+        thread.start()
         try:
-            assert select([process.stdout], [], [], 5)[0], "Demo did not start"
-            origin = process.stdout.readline().strip()
-            assert origin.startswith("http://127.0.0.1:")
-            yield origin
+            yield f"http://127.0.0.1:{server.server_port}"
         finally:
-            process.terminate()
-            process.wait(timeout=5)
+            server.shutdown()
+            thread.join()
 
 
 def config(tmp_path, origin, settings=SETTINGS):
@@ -88,7 +86,7 @@ def test_auth_plan_stays_offline_and_independent_of_environment(monkeypatch):
 def test_installed_cli_demo_reports_and_diffs_access_results(
     tmp_path, credentials, monkeypatch
 ):
-    with demo("--healthy") as origin:
+    with demo(healthy=True) as origin:
         baseline = scan(tmp_path, origin)
     with demo() as origin:
         current = scan(tmp_path, origin)
