@@ -1,0 +1,29 @@
+{
+  "openapi": "3.1.1",
+  "info": { "title": "EndNext local authorization demo", "version": "1" },
+  "security": [{ "demoBearer": [] }],
+  "components": {
+    "securitySchemes": {
+      "demoBearer": { "type": "http", "scheme": "bearer" }
+    }
+  },
+  "paths": {
+    "/documents/{id}": {
+      "parameters": [{
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      }],
+      "get": {
+        "operationId": "readDocument",
+        "responses": {
+          "204": { "description": "The identity may read this document" },
+          "401": { "description": "The credential was not accepted" },
+          "403": { "description": "The identity may not read this document" },
+          "404": { "description": "The document is unknown" }
+        }
+      }
+    }
+  }
+}

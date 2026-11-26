@@ -22,7 +22,8 @@ def listener(handler, tls_context=None):
             status, headers, body = handler(self.path)
             with suppress(BrokenPipeError, ConnectionResetError):
                 self.send_response(status)
-                self.send_header("Content-Length", str(len(body)))
+                if "Content-Length" not in headers:
+                    self.send_header("Content-Length", str(len(body)))
                 for name, value in headers.items():
                     self.send_header(name, value)
                 self.end_headers()

@@ -114,6 +114,19 @@ def test_relocated_failure_has_a_new_fingerprint(tmp_path):
     assert change["baseline"]["fingerprint"] != change["current"]["fingerprint"]
 
 
+def test_diff_does_not_match_a_case_across_auth_profiles(tmp_path):
+    first = _record("same", "FAIL", source="live_http") | {"auth_profile": "alice"}
+    second = first | {"auth_profile": "bob"}
+    result = _diff(*_saved_reports(tmp_path, [first], [second]))
+    assert result.returncode == 1
+    data = json.loads(result.stdout)
+    assert data["compared_checks"] == 0
+    unverified, introduced = data["changes"]
+    assert unverified["kind"] == "unverified"
+    assert introduced["kind"] == "new_failure"
+    assert unverified["baseline"]["fingerprint"] != introduced["current"]["fingerprint"]
+
+
 def test_missing_and_partial_checks_do_not_resolve_baseline_findings(tmp_path):
     paths = _saved_reports(
         tmp_path,

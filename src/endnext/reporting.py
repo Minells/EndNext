@@ -17,6 +17,7 @@ class ReportCase:
     source: str
     assertions: tuple[Assertion, ...]
     fixture: str | None = None
+    auth_profile: str | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,7 @@ def _case(obj: JsonObject, version: Json) -> ReportCase:
     else:
         source = _text(raw_source)
     identifier = operation.get("operation_id")
+    profile = obj.get("auth_profile")
     raw_assertions = obj.get("assertions")
     if isinstance(raw_assertions, list):
         assertions = tuple(_assertion(_object(item)) for item in raw_assertions)
@@ -121,6 +123,7 @@ def _case(obj: JsonObject, version: Json) -> ReportCase:
         source,
         assertions,
         fixture,
+        _text(profile) if profile is not None else None,
     )
 
 
@@ -159,6 +162,8 @@ def render(saved: SavedReport, *, markdown: bool) -> str:
             if case.fixture is not None
             else case.source
         )
+        if case.auth_profile is not None:
+            source += f" ({case.auth_profile})"
         for assertion in case.assertions:
             values = (
                 case.name,

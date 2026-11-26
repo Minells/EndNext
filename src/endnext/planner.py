@@ -1,9 +1,10 @@
 """Build deterministic plans from an inventory and local case configuration."""
 
 import math
+import re
 import tomllib
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -11,9 +12,12 @@ from .evidence import Inventory, Operation, SecurityRequirements
 from .inputs import CASE_NAME, METHODS, PATH_PARAMETER, Fixture, InputError, read_file
 
 MAX_REQUESTS = 20
+AUTHORIZATION_RULE = "security.authenticated_access"
 type OperationKey = tuple[str, str]
 type Scalar = str | int | float
 type Source = Literal["fixture", "http"]
+type Access = Literal["allow", "deny"]
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 
 
 @dataclass(frozen=True)
@@ -25,6 +29,8 @@ class Case:
     fixture: Path | None
     path_parameters: dict[str, Scalar]
     query_parameters: dict[str, Scalar]
+    auth_profile: str | None = None
+    expected_access: Access | None = None
 
 
 @dataclass(frozen=True)
@@ -33,6 +39,7 @@ class PlanConfig:
     cases: tuple[Case, ...]
     request_budget: int
     target: object = None
+    auth_profiles: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: Path) -> "PlanConfig":
@@ -64,7 +71,33 @@ class PlanConfig:
         )
         if len({case.name for case in parsed}) != len(parsed):
             raise InputError("The plan uses a case name more than once.")
-        return cls(selected, parsed, budget, data.get("target"))
+        profiles = _parse_profiles(data.get("auth_profiles", {}))
+        if any(
+            case.auth_profile is not None and case.auth_profile not in profiles
+            for case in parsed
+        ):
+            raise InputError("An HTTP case references an undefined auth profile.")
+        return cls(selected, parsed, budget, data.get("target"), profiles)
+
+
+def _parse_profiles(raw: object) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        raise InputError("Auth profiles must be a table of named profiles.")
+    profiles = {}
+    for name, profile in raw.items():
+        if not CASE_NAME.fullmatch(name) or not isinstance(profile, dict):
+            raise InputError("Each auth profile requires a valid name and table.")
+        env = profile.get("bearer_env")
+        if (
+            set(profile) != {"bearer_env"}
+            or not isinstance(env, str)
+            or not _ENV_NAME.fullmatch(env)
+        ):
+            raise InputError(
+                "Each auth profile requires only a bearer_env variable name."
+            )
+        profiles[name] = env
+    return profiles
 
 
 def _parse_operation(value: object) -> OperationKey:
@@ -84,12 +117,26 @@ def _parse_case(raw: object, directory: Path) -> Case:
     source = raw.get("source")
     status = raw.get("expected_status")
     fixture = raw.get("fixture")
+    profile = raw.get("auth_profile")
+    access = raw.get("expected_access")
     if not isinstance(name, str) or not CASE_NAME.fullmatch(name):
         raise InputError("Each plan case requires a valid name.")
     if source not in ("fixture", "http"):
         raise InputError("Plan case source must be fixture or http.")
     if status is not None and (type(status) is not int or not 100 <= status <= 599):
         raise InputError("Plan expected_status must be an integer from 100 to 599.")
+    if profile is not None or access is not None:
+        if (
+            source != "http"
+            or not isinstance(profile, str)
+            or not CASE_NAME.fullmatch(profile)
+            or access not in ("allow", "deny")
+            or status is not None
+        ):
+            raise InputError(
+                "An authorization case requires an HTTP source, auth_profile and "
+                "expected_access (allow or deny) in place of expected_status."
+            )
     if fixture is not None:
         if (
             source != "fixture"
@@ -112,6 +159,8 @@ def _parse_case(raw: object, directory: Path) -> Case:
         directory / fixture if fixture is not None else None,
         path_parameters,
         query_parameters,
+        profile,
+        access,
     )
 
 
@@ -148,6 +197,10 @@ _SCHEMA = CandidateRule(
 _EXPECTED = CandidateRule(
     "response.status.expected", "The owner supplied an expected status."
 )
+_ACCESS = CandidateRule(
+    AUTHORIZATION_RULE,
+    "The test credential is available and the response establishes an access outcome.",
+)
 
 
 @dataclass(frozen=True)
@@ -159,6 +212,8 @@ class PlannedCase:
     requires_request: bool
     request_cost: int
     candidate_rules: tuple[CandidateRule, ...]
+    auth_profile: str | None = None
+    expected_access: Access | None = None
 
 
 @dataclass(frozen=True)
@@ -217,7 +272,9 @@ def build_plan(
             )
             cost = int(case.source == "http" and reason is None)
             rules: tuple[CandidateRule, ...] = (_STATUS, _MEDIA, _SCHEMA)
-            if case.expected_status is not None:
+            if case.auth_profile is not None:
+                rules = (_ACCESS,)
+            elif case.expected_status is not None:
                 rules += (_EXPECTED,)
             cases.append(
                 PlannedCase(
@@ -228,6 +285,8 @@ def build_plan(
                     case.source == "http",
                     cost,
                     rules if reason is None else (),
+                    case.auth_profile,
+                    case.expected_access,
                 )
             )
             used += cost
@@ -270,14 +329,17 @@ def _skip_reason(
         return None
 
     method, template = case.operation
-    if (
-        method != "GET"
-        or case.expected_status is None
-        or not 200 <= case.expected_status <= 299
-    ):
-        return "http_requires_positive_get"
-    if not anonymous:
-        return "authentication_required"
+    if case.auth_profile is None:
+        if (
+            method != "GET"
+            or case.expected_status is None
+            or not 200 <= case.expected_status <= 299
+        ):
+            return "http_requires_positive_get"
+        if not anonymous:
+            return "authentication_required"
+    elif method != "GET":
+        return "authorization_requires_get"
     if (
         set(case.path_parameters) != set(PATH_PARAMETER.findall(template))
         or "" in case.path_parameters.values()

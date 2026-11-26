@@ -1,4 +1,4 @@
-"""Synchronous, explicitly scoped loopback transport for positive GET cases."""
+"""Synchronous, explicitly scoped loopback transport for GET cases."""
 
 import ipaddress
 import signal
@@ -163,7 +163,9 @@ class LoopbackTransport:
         if event == "http11.send_request_headers.complete":
             self.sent += 1
 
-    def acquire(self, request: httpx.Request) -> Acquisition:
+    def acquire(
+        self, request: httpx.Request, *, bearer_token: str | None = None
+    ) -> Acquisition:
         if self.attempted >= self.budget:
             return Acquisition(problem="request_budget_exhausted")
         now = time.monotonic()
@@ -189,6 +191,8 @@ class LoopbackTransport:
         status = None
         media_type = None
         try:
+            if bearer_token is not None:
+                request.headers["Authorization"] = f"Bearer {bearer_token}"
             with _deadline(min(REQUEST_TIMEOUT, self.expires - now)):
                 response = self.client.send(
                     request, stream=True, follow_redirects=False
@@ -235,4 +239,6 @@ class LoopbackTransport:
         except httpx.HTTPError:
             return Acquisition(status, media_type, problem="transport_error")
         finally:
+            if bearer_token is not None:
+                request.headers.pop("Authorization", None)
             self.client.cookies.clear()

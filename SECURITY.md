@@ -9,9 +9,10 @@ candidate branches do not receive backports.
 ## Use live checks within scope
 
 Run `endnext scan` only against a loopback service you are authorized to test.
-Specify the origin, port, and path prefix, and select the positive GET cases
-approved for that service. Keep real credentials and traffic out of examples
-and shared reports.
+Specify the origin, port, and path prefix, and select the GET cases approved for
+that service. Supply bearer credentials via environment variables referenced by
+the test profiles. Keep real credentials and traffic out of examples and shared
+reports.
 
 ## Report a vulnerability privately
 

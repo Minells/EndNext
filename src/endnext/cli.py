@@ -212,13 +212,18 @@ def _show_plan(plan: Plan, output_format: str) -> None:
         if not entry.cases:
             print("  No cases configured.")
         for case in entry.cases:
+            profile = (
+                f" · {case.auth_profile} expects {case.expected_access}"
+                if case.auth_profile
+                else ""
+            )
             if case.reason is not None:
                 print(
-                    f"  SKIPPED {case.name} [{case.source}] · {case.reason.replace('_', ' ')}"
+                    f"  SKIPPED {case.name} [{case.source}]{profile} · {case.reason.replace('_', ' ')}"
                 )
             else:
                 print(
-                    f"  PLANNED {case.name} [{case.source}] · "
+                    f"  PLANNED {case.name} [{case.source}]{profile} · "
                     f"{case.request_cost} requests, {len(case.candidate_rules)} candidate assertions"
                 )
                 for rule in case.candidate_rules:
@@ -250,8 +255,9 @@ def _show_scan(
         )
         return
     for case in run.cases:
+        profile = f" [{case.auth_profile}]" if case.auth_profile else ""
         print(
-            f"{case.state} {_operation_name(case.operation)} · {case.case} · {case.reason}"
+            f"{case.state} {_operation_name(case.operation)} · {case.case}{profile} · {case.reason}"
         )
         for assertion in case.assertions:
             print(f"  {assertion.verdict} {assertion.rule} · {assertion.reason}")
