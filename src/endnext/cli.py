@@ -6,10 +6,11 @@ import sys
 from dataclasses import asdict
 from importlib.metadata import version
 from pathlib import Path
-from typing import NoReturn
+from typing import NoReturn, Protocol
 from uuid import uuid4
 
 from .baseline import compare, render_diff
+from .branding import help_heading
 from .contract import Contract
 from .evidence import Inventory, Operation, counts, primary, report
 from .inputs import Fixture, InputError
@@ -21,7 +22,16 @@ from .scan import ScanRun, scan
 from .transport import Target
 
 
+class _Writable(Protocol):
+    def write(self, value: str, /) -> object: ...
+
+
 class _Parser(argparse.ArgumentParser):
+    def print_help(self, file: _Writable | None = None) -> None:
+        output = sys.stdout if file is None else file
+        output.write(f"{help_heading(output)}\n\n")
+        super().print_help(output)
+
     def error(self, message: str) -> NoReturn:
         # argparse's default error message echoes user-supplied arguments.
         self.print_usage(sys.stderr)

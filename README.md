@@ -1,7 +1,10 @@
-# EndNext
+# <picture><source media="(prefers-color-scheme: dark)" srcset="assets/branding/logo-dark.svg"><source media="(prefers-color-scheme: light)" srcset="assets/branding/logo-light.svg"><img src="assets/branding/logo.svg" width="216" height="56" alt="EndNext"></picture>
+
 Open-source API assurance toolkit for contract validation, robustness testing, and security analysis.
 
 L'MVP offline elenca le operazioni di un contratto OpenAPI 3.1 locale e verifica una risposta JSON già acquisita, anche a servizio spento.
+
+[![Python 3.12+](assets/branding/badges/python.svg)](#installazione-e-demo) [![Licenza MIT](assets/branding/badges/license.svg)](LICENSE)
 
 ## Installazione e demo
 
@@ -108,3 +111,7 @@ Gli avvisi e i FAIL già presenti sono visibili nel riepilogo e non bloccano da 
 ```
 
 La soglia del 96% combina righe e rami e include le invocazioni della CLI in processi separati. Per integrare un branch, apri una pull request verso `main` e attendi il check obbligatorio **EndNext merge gate**. La CI esegue Ruff, mypy, la suite con coverage e una prova da wheel e sdist su Linux e macOS con Python 3.12. I report di copertura XML sono disponibili tra gli artefatti del workflow.
+
+## Identità visiva
+
+Le [linee guida del marchio](docs/BRANDING.md) raccolgono gli asset ufficiali, i token e le convenzioni per CLI, documentazione e diagrammi.

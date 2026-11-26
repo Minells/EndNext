@@ -1,6 +1,42 @@
 import json
+from unittest.mock import Mock
 
 from test_check import CONTRACT, SENTINEL, run_cli, write_json
+
+from endnext.branding import help_heading
+
+
+def test_help_is_plain_when_redirected():
+    for arguments in (("--help",), ("check", "--help")):
+        result = run_cli(*arguments, offline=True)
+        assert result.returncode == 0 and not result.stderr
+        assert result.stdout.startswith("EndNext\n\nusage:")
+        assert result.stdout.isascii()
+
+
+def test_terminal_help_branding_respects_the_terminal(monkeypatch):
+    output = Mock(encoding="UTF-8")
+    output.isatty.return_value = True
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setenv("COLORTERM", "truecolor")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    colored = help_heading(output)
+    assert "\033[38;2;20;22;24;48;2;230;255;82m" in colored
+    assert "EndNext" in colored
+
+    monkeypatch.setenv("NO_COLOR", "1")
+    monochrome = help_heading(output)
+    assert "█" in monochrome and "\033" not in monochrome
+    monkeypatch.delenv("NO_COLOR")
+    monkeypatch.delenv("COLORTERM")
+    assert help_heading(output) == monochrome
+
+    output.encoding = "ascii"
+    assert help_heading(output) == "EndNext"
+    output.encoding = "UTF-8"
+    monkeypatch.setenv("TERM", "dumb")
+    assert help_heading(output) == "EndNext"
+    assert help_heading(object()) == "EndNext"
 
 
 def test_inspect_text_shows_declared_security_and_request_media_types(tmp_path):
