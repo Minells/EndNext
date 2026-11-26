@@ -1,0 +1,116 @@
+/* EndNext design tokens. Values and references are defined in tokens.json. */
+:root {
+  color-scheme: light dark;
+
+  --en-brand-graphite: #141618;
+  --en-brand-carbon: #292D32;
+  --en-brand-signal: #E6FF52;
+  --en-brand-chalk: #F3F2ED;
+  --en-brand-steel: #8C959F;
+
+  --en-neutral-100: #EAE8E2;
+  --en-neutral-200: #C1C6CC;
+  --en-neutral-500: #66717C;
+  --en-neutral-600: #515B65;
+  --en-neutral-750: #3A4148;
+
+  --en-interaction-signal-hover: #D9F143;
+  --en-interaction-signal-pressed: #C7DD3B;
+  --en-interaction-link-light: #425200;
+
+  --en-status-light-success: #225B38;
+  --en-status-light-warning: #795005;
+  --en-status-light-error: #9A322B;
+  --en-status-light-info: #255A79;
+
+  --en-status-dark-success: #9DD7AD;
+  --en-status-dark-warning: #F4CB76;
+  --en-status-dark-error: #FFABA4;
+  --en-status-dark-info: #A9D0EA;
+
+  --en-color-canvas: var(--en-brand-chalk);
+  --en-color-surface: var(--en-neutral-100);
+  --en-color-text: var(--en-brand-graphite);
+  --en-color-text-secondary: var(--en-neutral-600);
+  --en-color-border: var(--en-neutral-200);
+  --en-color-border-control: var(--en-neutral-500);
+  --en-color-link: var(--en-interaction-link-light);
+  --en-color-focus: var(--en-brand-graphite);
+  --en-color-action: var(--en-brand-signal);
+  --en-color-action-hover: var(--en-interaction-signal-hover);
+  --en-color-action-pressed: var(--en-interaction-signal-pressed);
+  --en-color-on-action: var(--en-brand-graphite);
+  --en-color-success: var(--en-status-light-success);
+  --en-color-warning: var(--en-status-light-warning);
+  --en-color-error: var(--en-status-light-error);
+  --en-color-info: var(--en-status-light-info);
+
+  --en-font-family-sans: "Instrument Sans", system-ui, sans-serif;
+  --en-font-family-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --en-font-size-metadata: 0.8125rem;
+  --en-font-size-code: 0.875rem;
+  --en-font-size-body: 1rem;
+  --en-font-size-title: 1.75rem;
+  --en-font-size-display: 2.5rem;
+
+  --en-font-weight-regular: 400;
+  --en-font-weight-semibold: 600;
+
+  --en-font-leading-tight: 1.15;
+  --en-font-leading-normal: 1.5;
+
+  --en-space-1: 0.25rem;
+  --en-space-2: 0.5rem;
+  --en-space-3: 0.75rem;
+  --en-space-4: 1rem;
+  --en-space-6: 1.5rem;
+  --en-space-8: 2rem;
+  --en-space-12: 3rem;
+  --en-space-16: 4rem;
+
+  --en-radius-none: 0;
+  --en-radius-control: 0.25rem;
+
+  --en-border-width: 1px;
+  --en-border-focus-width: 2px;
+  --en-border-focus-offset: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --en-color-canvas: var(--en-brand-graphite);
+    --en-color-surface: var(--en-brand-carbon);
+    --en-color-text: var(--en-brand-chalk);
+    --en-color-text-secondary: var(--en-brand-steel);
+    --en-color-border: var(--en-neutral-750);
+    --en-color-border-control: var(--en-brand-steel);
+    --en-color-link: var(--en-brand-signal);
+    --en-color-focus: var(--en-brand-signal);
+    --en-color-success: var(--en-status-dark-success);
+    --en-color-warning: var(--en-status-dark-warning);
+    --en-color-error: var(--en-status-dark-error);
+    --en-color-info: var(--en-status-dark-info);
+  }
+}
+
+@media (forced-colors: active) {
+  :root {
+    --en-color-canvas: Canvas;
+    --en-color-surface: Canvas;
+    --en-color-text: CanvasText;
+    --en-color-text-secondary: CanvasText;
+    --en-color-border: ButtonBorder;
+    --en-color-border-control: ButtonBorder;
+    --en-color-link: LinkText;
+    --en-color-focus: Highlight;
+    --en-color-action: ButtonFace;
+    --en-color-action-hover: ButtonFace;
+    --en-color-action-pressed: ButtonFace;
+    --en-color-on-action: ButtonText;
+    --en-color-success: CanvasText;
+    --en-color-warning: CanvasText;
+    --en-color-error: CanvasText;
+    --en-color-info: CanvasText;
+  }
+}
