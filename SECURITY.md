@@ -1,0 +1,34 @@
+# Security policy
+
+## Supported versions
+
+EndNext is in pre-release development. The `main` branch is the only line
+maintained for security fixes at this stage. Older snapshots and release
+candidate branches do not receive backports.
+
+## Report a vulnerability privately
+
+[Open a private vulnerability report][report] through GitHub. If the direct
+link prompts you to sign in, sign in and select **Report a vulnerability** from
+the repository's **Security** tab.
+
+Include the affected EndNext version or commit, Python version and platform,
+the behavior you observed, and who or what could be affected. Provide the
+smallest steps and synthetic inputs that reproduce the issue. Redact
+credentials, tokens, cookies, personal data, and real API traffic from reports
+and attachments.
+
+Keep vulnerability details and proposed fixes private while the report is
+being handled. Use the private report thread for updates and avoid posting
+details in issues, pull requests, or public comments. Report vulnerabilities
+in a service assessed with EndNext to that service's owner.
+
+## What happens next
+
+The maintainer triages the report, confirms the impact and affected versions,
+and may ask for more information in the private thread. For confirmed issues,
+the maintainer coordinates a fix, its verification, and the timing of public
+disclosure with the reporter. A GitHub security advisory can record the impact,
+fix, and any mitigation when disclosure is appropriate.
+
+[report]: https://github.com/Minells/EndNext/security/advisories/new

@@ -1,0 +1,29 @@
+name: Bug report
+description: Report incorrect behavior in EndNext.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue will be public. Use the [Security Policy](https://github.com/Minells/EndNext/security/policy)
+        to report a suspected vulnerability privately. Use synthetic inputs and remove secrets and personal data.
+  - type: input
+    id: environment
+    attributes:
+      label: Version and environment
+      description: Include the EndNext version or commit, Python version, and operating system.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the CLI command and minimal synthetic inputs, if applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and observed behavior
+      description: Include the exit code and relevant redacted output, if available.
+    validations:
+      required: true

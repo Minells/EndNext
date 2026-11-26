@@ -1,9 +1,61 @@
-.DS_Store
+# Python environments and build output
 .venv/
+.venv-*/
+venv/
 __pycache__/
+*.py[cod]
 *.egg-info/
 /build/
 /dist/
+
+# Test reports and tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 /.coverage
 /.coverage.*
 /coverage.xml
+/htmlcov/
+
+# Local editor and operating system files
+/.idea/
+/.vscode/*
+!/.vscode/extensions.json
+!/.vscode/settings.json
+!/.vscode/tasks.json
+!/.vscode/launch.json
+*.swp
+*.tmp
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+!.env.*.example
+.envrc.local
+.netrc
+.pypirc
+.aws/credentials
+.secrets/
+*.key
+*.private.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# Local logs, databases, and artifacts from the quickstart
+*.log
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+/suite.toml
+/evidence.json
+/baseline.json
+/current.json
