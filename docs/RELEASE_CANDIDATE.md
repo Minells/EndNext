@@ -18,7 +18,7 @@ Ogni contratto conteneva un'operazione. Il piano ha riportato un caso eseguibile
 
 La candidata iniziale ha superato la suite e l’installazione da wheel e sdist su macOS e Linux. [Esecuzione iniziale su GitHub Actions](https://github.com/Minells/EndNext/actions/runs/45673906879)
 
-Il workflow **Main CI** ripete queste verifiche per le pull request verso `main`. Per riprodurle, segui il [quickstart](../README.md#installazione-e-demo), esegui `python -m build` con il pacchetto `build` installato e installa ogni artefatto in un ambiente pulito usando `python -m pip install <artefatto>`.
+Il workflow **Main CI** ripete queste verifiche per le pull request verso `main`. Per riprodurle, segui il [quickstart](../README.md#quick-start), esegui `python -m build` con il pacchetto `build` installato e installa ogni artefatto in un ambiente pulito usando `python -m pip install <artefatto>`.
 
 Il 25 novembre 2026 l'API PyPI ha restituito HTTP 404 per il progetto `endnext`. Il risultato registra lo stato osservato al momento della prova. [Progetto PyPI](https://pypi.org/project/endnext/)
 

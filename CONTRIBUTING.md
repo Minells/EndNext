@@ -17,7 +17,7 @@ python -m pip install -e '.[dev]' build
 ```
 
 The editable install exposes the `endnext` CLI. Try the
-[quickstart](README.md#installazione-e-demo) or run
+[quick start](README.md#quick-start) or run
 `endnext inspect examples/items.openapi.json`.
 
 ## Choose a contribution
