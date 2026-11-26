@@ -239,7 +239,8 @@ def test_scan_verifies_tls_certificate(tmp_path, contract):
         capture_output=True,
         timeout=10,
     )
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(cert, key)
     with listener(_json_response, context) as (origin, requests):
         result = run_cli("scan", contract, config(tmp_path, origin), "--format", "json")
