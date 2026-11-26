@@ -1,149 +1,213 @@
-# <picture><source media="(prefers-color-scheme: dark)" srcset="assets/branding/logo-dark.svg"><source media="(prefers-color-scheme: light)" srcset="assets/branding/logo-light.svg"><img src="assets/branding/logo.svg" width="216" height="56" alt="EndNext"></picture>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/branding/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/branding/logo-light.svg">
+    <img src="assets/branding/logo.svg" width="460" alt="EndNext">
+  </picture>
+</h1>
 
-Open-source API assurance toolkit for contract validation, robustness testing, and security analysis.
+<p align="center"><strong>Open-source API verification for OpenAPI 3.1.</strong></p>
 
-L'MVP offline elenca le operazioni di un contratto OpenAPI 3.1 locale e verifica una risposta JSON già acquisita, anche a servizio spento.
+<p align="center">
+  Validate captured JSON responses, run scoped checks against local services,<br>
+  and compare evidence across runs to catch regressions.
+</p>
 
-[![Python 3.12+](assets/branding/badges/python.svg)](#installazione-e-demo) [![Licenza MIT](assets/branding/badges/license.svg)](LICENSE)
+<p align="center">
+  <a href="#quick-start"><img src="assets/branding/badges/python.svg" alt="Python 3.12 or later"></a>
+  <a href="https://github.com/Minells/EndNext/actions/workflows/main-ci.yml"><img src="https://github.com/Minells/EndNext/actions/workflows/main-ci.yml/badge.svg?branch=main" alt="Main CI status"></a>
+  <a href="LICENSE"><img src="assets/branding/badges/license.svg" alt="MIT license"></a>
+</p>
 
-## Installazione e demo
+<p align="center">
+  <a href="#quick-start"><strong>Quick start</strong></a> ·
+  <a href="#features">Features</a> ·
+  <a href="#local-http-checks">Local HTTP checks</a> ·
+  <a href="#compare-runs">Compare runs</a> ·
+  <a href="#documentation">Docs</a> ·
+  <a href="https://github.com/Minells/EndNext/issues">Issues</a>
+</p>
 
-Dal checkout, con Python 3.12 o successivo.
+> **Pre-release.** Install EndNext from this repository. The examples use synthetic data and run offline or against a bundled loopback service.
 
-```sh
-python3.12 -m venv .venv
-.venv/bin/python -m pip install '.[dev]'
+## Why EndNext
 
-.venv/bin/endnext inspect examples/items.openapi.json
-.venv/bin/endnext check examples/items.openapi.json examples/item-pass.json
-.venv/bin/endnext check examples/items.openapi.json examples/item-fail.json --format json
-.venv/bin/python -m pytest
+When an API response breaks its contract, you need to know which operation and field changed and whether the failure is new. EndNext turns a saved response into evidence you can review even after the service shuts down. For local integration testing, it can also collect responses from explicitly selected endpoints.
+
+## How it works
+
+```text
+OpenAPI 3.1 contract + saved response         → check → JSON evidence
+OpenAPI 3.1 contract + TOML suite              → plan  → cases and request budget
+OpenAPI 3.1 contract + authorized local suite → scan  → JSON evidence
+
+Saved evidence              → report → terminal or Markdown
+Baseline + current evidence → diff   → regression summary
 ```
 
-Se ti serve solo la CLI, installa `.` senza l'extra `dev`. Usa `--format json` con `inspect` o `check` per ottenere un documento su stdout.
+## Quick start
 
-| Comando e risultato | Codice di uscita |
+From the repository root on macOS or Linux, create a virtual environment with Python 3.12 or later and install the CLI.
+
+```sh
+python3 --version
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install .
+```
+
+Inspect the sample contract, then validate a passing response and a response with a schema mismatch.
+
+```sh
+endnext inspect examples/items.openapi.json
+endnext check examples/items.openapi.json examples/item-pass.json
+endnext check examples/items.openapi.json examples/item-fail.json
+```
+
+The final command exits with code `1` and identifies the failing field.
+
+```text
+FAIL GET /items/{id} (getItem) · response.body.schema at /quantity
+The schema expects integer. The observed JSON type is string. Observation: imported fixture, HTTP 200.
+```
+
+<details>
+<summary>Validate your own captured response</summary>
+
+1. Run `endnext inspect contract.yaml` to find the method, exact path template, media type, and security declarations.
+2. Copy [the passing fixture](examples/item-pass.json) and set `case`, `method`, and `path_template`. Fill in the scalar values in `path_parameters` when the template has parameters.
+3. Set `status` to the observed HTTP status and `media_type` to `application/json`. Set `body` to the captured JSON value and run `endnext check contract.yaml response.json`.
+
+Contracts can be local JSON or JSON-compatible YAML files up to 1 MiB, with references within the same document. Quote numeric YAML keys such as `'200'`. Each invocation of `check` validates one captured response. Reports retain operation, status, provenance, and schema mismatch details while omitting response bodies, parameter values, and raw validator messages. Use shareable case and file names. [Validator notes](docs/VALIDATOR.md)
+
+</details>
+
+## Features
+
+| Command | What it does |
 | --- | --- |
-| `inspect` completato o `check` con `PASS` | `0` |
-| `check` con `FAIL` | `1` |
-| Errore di input o di esecuzione | `2`, con diagnostica su stderr |
+| `inspect` | Lists operations, response media types, and contract-level and operation-level security declarations. |
+| `check` | Validates a captured response against documented status, media type, and schema. Fixtures can also carry expected status, anonymous access, and cache policy assertions. |
+| `plan` | Previews selected operations, effective security, skipped cases, candidate assertions, and estimated request cost entirely offline. |
+| `scan` | Runs explicitly configured GET cases against an authorized loopback service, including access checks with named bearer profiles. |
+| `report` | Renders saved v1 and v2 JSON evidence as terminal output or Markdown while preserving verdicts, provenance, and counts. |
+| `diff` | Compares two evidence files and identifies new failures, resolved failures, and checks that could not be verified. |
 
-La demo verifica `GET /items/{id}`. Il secondo caso indica `response.body.schema` e `/quantity`, con tipo atteso `integer` e tipo osservato `string`.
+Use `--format json` with `inspect`, `check`, `plan`, `scan`, or `diff` to get structured output on stdout.
 
-## Verifica una risposta tua
-
-1. Esegui `endnext inspect contratto.yaml` per leggere metodo, path template, media type e dichiarazioni di sicurezza del contratto. Puoi usare un file JSON, `.yaml` o `.yml`.
-2. Copia `examples/item-pass.json`. Imposta `case`, `method` e `path_template` usando il template esatto di `inspect`. Se il template contiene parametri, indica i valori scalari corrispondenti in `path_parameters`. Il campo è facoltativo per un path senza parametri.
-3. Riporta lo status osservato in `status`, imposta `media_type` a `application/json` e inserisci il JSON osservato come valore di `body`. Esegui `endnext check contratto.yaml risposta.json`.
-
-Il report conserva operazione, provenienza, status e tipo JSON richiesto per spiegare un'eventuale discrepanza. Il body, i valori dei parametri e i messaggi grezzi del validatore restano fuori dal report. Usa un nome di caso e di file adatto a essere condiviso.
-
-Il caricamento accetta file locali fino a 1 MiB, riferimenti nello stesso documento e YAML compatibile con JSON. In YAML racchiudi tra virgolette le chiavi numeriche, come `'200'`. `check` verifica una risposta JSON documentata per volta. `inspect` mostra separatamente le dichiarazioni di sicurezza del contratto e delle operazioni. [Decisione sul validatore e limiti](docs/VALIDATOR.md)
-
-## Piano offline
+### Preview a suite offline
 
 ```sh
-.venv/bin/endnext plan examples/items.openapi.json examples/items-plan.toml --format json
+endnext plan examples/items.openapi.json examples/items-plan.toml
 ```
 
-In `select` indica le operazioni usando metodo e path template. Ogni voce `[[cases]]` ha un nome univoco, un'operazione e una sorgente. Per `source = "fixture"`, il percorso della fixture è relativo al TOML. Per `source = "http"`, specifica un GET positivo, lo status atteso e gli eventuali parametri scalari di path e query. Il budget HTTP va da 0 a 20 e parte da 0.
+The sample plan shows one imported fixture, one HTTP case, and one skipped case with a missing fixture. It estimates one request and lists the assertions whose prerequisites must be met during execution.
 
-`plan` elenca anche le operazioni senza casi. Mostra la sicurezza effettiva, il motivo degli skip, il costo in richieste e le asserzioni candidate con le relative condizioni. Le richieste sono stimate e le asserzioni candidate non costituiscono risultati di verifica. A parità di input il piano è identico, anche in assenza di rete.
+<details>
+<summary>How to define a suite</summary>
 
-## Verifica HTTP su loopback
+Use `select` to choose operations by method and exact path template. Give each `[[cases]]` entry a unique name, an operation, and a source. For `source = "fixture"`, resolve the fixture path relative to the TOML file. For `source = "http"`, specify a GET case with an expected status or access outcome and any scalar path and query parameters. The request budget defaults to zero and accepts values from 0 to 20. The same inputs produce the same plan without network access.
 
-Per usare `scan`, aggiungi al TOML la destinazione di un servizio di prova locale per cui hai autorizzazione. Il path del contratto deve ricadere nel prefisso autorizzato.
+</details>
 
-```toml
-[target]
-authorized = true
-origin = "http://127.0.0.1:8000"
-path_prefix = "/items"
-```
+## Local HTTP checks
 
-```sh
-endnext plan examples/items.openapi.json suite.toml
-endnext scan examples/items.openapi.json suite.toml --format json
-```
+On POSIX, `scan` executes the GET cases selected in a TOML suite against a loopback service you are authorized to test. The target requires explicit authorization, a literal loopback IP address, a port, and a path prefix. Use `expected_status` for contract cases. For access cases, choose a named `auth_profile` and set `expected_access` to `"allow"` or `"deny"`. The profile reads its bearer token from the environment at runtime. Plans and reports identify the profile by name.
 
-Su POSIX, `scan` esegue i GET selezionati, con casi di contratto anonimi o casi di autorizzazione con un profilo esplicito. L'origine richiede un indirizzo IP letterale di loopback e una porta esplicita. Il trasporto limita l'esecuzione a una richiesta al secondo, 20 tentativi, 5 secondi per richiesta, 60 secondi complessivi di acquisizione e 1 MiB di body conservato per risposta. Redirect, retry, proxy d'ambiente e propagazione dei cookie sono disattivati. HTTPS verifica il certificato. Il report distingue i tentativi dagli invii completati degli header HTTP. Lo staging è fuori dal perimetro del trasporto corrente. [Trasporto HTTPX](https://www.python-httpx.org/advanced/transports/) · [Tracciamento degli invii HTTP](https://www.python-httpx.org/advanced/extensions/#trace)
+<details>
+<summary>Run the bundled two-identity demo</summary>
 
-### Demo di autorizzazione con due identità
-
-Nella [suite demo](examples/authorization-plan.toml), ogni profilo `[auth_profiles.<nome>]` dichiara `bearer_env`, il nome della variabile da cui `scan` legge il token. Ogni caso di autorizzazione seleziona un `auth_profile`, una risorsa nota e `expected_access = "allow"` o `"deny"`. I casi di contratto usano `expected_status`. `plan` mostra profilo e aspettativa senza leggere i valori delle credenziali. Nei report compare il nome del profilo.
-
-Dal checkout, avvia la demo in un terminale con due token sintetici.
+The [demo suite](examples/authorization-plan.toml) already defines the loopback target, request budget, and profiles. Start the synthetic service in one terminal from the repository root with the virtual environment active.
 
 ```sh
 export ENDNEXT_DEMO_ALICE_TOKEN=demo-alice-local
 export ENDNEXT_DEMO_BOB_TOKEN=demo-bob-local
-.venv/bin/python examples/authorization_demo.py
+python examples/authorization_demo.py
 ```
 
-In un secondo terminale, esporta gli stessi token ed esegui la suite.
+In a second terminal, activate the same virtual environment and run the suite.
 
 ```sh
 export ENDNEXT_DEMO_ALICE_TOKEN=demo-alice-local
 export ENDNEXT_DEMO_BOB_TOKEN=demo-bob-local
-.venv/bin/endnext plan examples/authorization.openapi.json examples/authorization-plan.toml
-.venv/bin/endnext scan examples/authorization.openapi.json examples/authorization-plan.toml --format json > current.json
-.venv/bin/endnext report current.json
+endnext plan examples/authorization.openapi.json examples/authorization-plan.toml
+endnext scan examples/authorization.openapi.json examples/authorization-plan.toml --format json > current.json
+endnext report current.json
 ```
 
-| Caso | Aspettativa | Osservazione | Verdetto |
+| Case | Expected access | Observed status | Verdict |
 | --- | --- | --- | --- |
-| Alice sul documento di Alice | Accesso consentito | HTTP 204 | `PASS` |
-| Bob sul documento di Alice | Accesso negato | HTTP 403 | `PASS` |
-| Bob sul documento di Bob | Accesso consentito | HTTP 403 | `FAIL` |
+| Alice reads her own document | Allow | 204 | `PASS` |
+| Bob reads Alice's document | Deny | 403 | `PASS` |
+| Bob reads his own document | Allow | 403 | `FAIL` |
 
-Il piano prevede tre richieste. `scan` ne invia tre ed esce con codice `1`. Per produrre una baseline, riavvia lo stesso servizio con `--healthy` e ripeti `scan` salvando `baseline.json`. Il caso di Bob sul proprio documento restituisce HTTP 204 e `scan` esce con codice `0`. `endnext diff baseline.json current.json` segnala un nuovo FAIL e restituisce `1`.
+The scan sends three requests and exits with code `1`. To generate a passing baseline, stop the demo server and restart it with `python examples/authorization_demo.py --healthy`. Run the scan again, writing to `baseline.json`. The healthy run returns HTTP 204 for Bob's own document and exits with code `0`. Run `endnext diff baseline.json current.json` to see the regression.
 
-L'asserzione `security.authenticated_access` tratta un 2xx come accesso consentito e un 403 come negato. Un 401, uno status ambiguo o una risposta parziale per limite di lettura danno `INCONCLUSIVE`. Una credenziale assente o un caso escluso danno `SKIPPED`. Un token malformato o una richiesta interrotta per timeout o errore di trasporto danno `ERROR`. `scan` restituisce `2` se un caso di autorizzazione è saltato, inconcludente o in errore, anche se altri casi hanno prodotto risultati. Gli esiti restano visibili nel report.
+</details>
 
-## Asserzioni ed evidenze
+<details>
+<summary>Read the transport limits and access verdicts</summary>
 
-`check` e i casi di contratto di `scan` valutano separatamente status documentato, media type, schema ed eventuale status atteso. Una risposta incompleta mantiene le asserzioni supportate dai dati disponibili. Nelle fixture, `body_state` può indicare `absent`, `truncated` o `invalid`. Ometti `body` in questi casi. Uno status HTTP 204 può essere registrato senza body o media type.
+The transport allows one request per second, up to 20 attempts, with a five-second limit per request, a 60-second acquisition deadline, and up to 1 MiB of retained response body per response. It disables redirects, retries, environment proxies, and cookie propagation, and verifies HTTPS certificates. Reports distinguish request attempts from completed HTTP header sends.
 
-Per una fixture con `identity: "anonymous"`, `expected_access` permette di confrontare l'osservazione importata con l'esito dichiarato. Con `sensitive: true`, `expected_cache_directive` valuta la presenza del nome di direttiva in `headers.Cache-Control`. La demo produce asserzioni di schema superate, una discrepanza di accesso, un avviso relativo alla cache e uno skip per aspettativa HTTP assente.
+The `security.authenticated_access` rule treats a 2xx response as allowed and a 403 as denied. A 401, ambiguous status, or partially read response yields `INCONCLUSIVE`. An unavailable credential or excluded case yields `SKIPPED`. Malformed tokens, timeouts, and transport failures yield `ERROR`. An access case with any of these three verdicts makes `scan` exit with code `2`. [Security policy](SECURITY.md)
 
-```sh
-.venv/bin/endnext check examples/items.openapi.json examples/item-policy-fail.json --format json > evidence.json
-.venv/bin/endnext report evidence.json
-.venv/bin/endnext report evidence.json --format markdown
-.venv/bin/python -m pytest -q tests/test_reports.py tests/test_scan.py
-```
+</details>
 
-Il primo comando esce con codice 1, con evidenza valida in `evidence.json`. Il report JSON v2 conserva tutte le asserzioni. `report` rilegge anche i documenti v1 e mantiene verdetti, provenienza e conteggi nei formati terminale e Markdown. I casi di body parziale e timeout nella suite producono rispettivamente `INCONCLUSIVE` e `ERROR`, con codice 2.
+## Reports and evidence
 
-## Confrontare due esecuzioni
-
-Salva i report JSON di due esecuzioni della stessa suite e confrontali offline. L'esempio registra una regressione nello schema di risposta. Il secondo `check` e il comando `diff` escono con codice 1.
+EndNext records individual assertions so a partial response can still show which checks had enough evidence. Use the policy fixture to see a passing schema check alongside an access mismatch and a cache warning.
 
 ```sh
-.venv/bin/endnext check examples/items.openapi.json examples/item-pass.json --format json > baseline.json
-.venv/bin/endnext check examples/items.openapi.json examples/item-fail.json --format json > current.json
-.venv/bin/endnext diff baseline.json current.json --format json
+endnext check examples/items.openapi.json examples/item-policy-fail.json --format json > evidence.json
+endnext report evidence.json --format markdown
 ```
 
-`diff` legge report di `check` e `scan` v1 e v2. Abbina metodo, path template, nome del caso, tipo di provenienza, regola e profilo di autenticazione quando presente. Il fingerprint include anche la posizione del campo, così un FAIL che si sposta su un altro campo emerge come nuovo. Un PASS della stessa regola conferma la risoluzione. Se un controllo già eseguito risulta assente, saltato o inconcludente, appare come non verificato. Mantieni stabili i nomi di casi e profili tra le esecuzioni. Usa un nuovo nome di caso quando cambi risorsa o aspettativa e un nuovo nome di profilo quando cambi identità.
+The fixture check deliberately exits with code `1` and writes valid JSON evidence. Use `endnext report evidence.json` for the terminal view.
 
-| Esito del confronto | Codice di uscita |
+<details>
+<summary>Record partial responses and policy expectations</summary>
+
+Set fixture `body_state` to `absent`, `truncated`, or `invalid` and omit `body` when the response lacks a complete JSON value. For HTTP 204, you can omit both body and media type. With `identity: "anonymous"`, the fixture can assert `expected_access` against an imported observation. With `sensitive: true`, `expected_cache_directive` checks for the named directive in `headers.Cache-Control`.
+
+</details>
+
+## Compare runs
+
+Save JSON evidence from two runs of the same suite. In this example, `diff` flags the schema mismatch at `/quantity` as a new failure.
+
+```sh
+endnext check examples/items.openapi.json examples/item-pass.json --format json > baseline.json
+endnext check examples/items.openapi.json examples/item-fail.json --format json > current.json
+endnext diff baseline.json current.json
+```
+
+Keep case and profile names stable across runs. Rename a case when its resource or expectation changes, and rename a profile when its identity changes. EndNext matches checks by operation, case name, observation source, rule, and authentication profile where present. The failure fingerprint includes the field location.
+
+Existing failures and warnings remain visible in the summary. A passing assertion confirms a resolution. If a check from the baseline is missing, skipped, or inconclusive in the current run, EndNext reports it as unverified.
+
+| Exit code | `check` / `scan` | `diff` |
+| --- | --- | --- |
+| `0` | Completed without a failing or blocking incomplete check | Comparable evidence with no new failures or incomplete baseline checks |
+| `1` | A failing assertion | At least one new failure |
+| `2` | Invalid input, execution error, or a blocking incomplete check | Invalid input, no comparable checks, or incomplete verification |
+
+## Documentation
+
+| Resource | What you’ll find |
 | --- | --- |
-| Almeno un controllo confrontabile, senza nuovi FAIL o verifiche mancanti rispetto alla baseline | `0` |
-| Almeno un nuovo FAIL, anche in presenza di verifiche mancanti | `1` |
-| Input non valido, confronto senza controlli confrontabili o verifica incompleta | `2` |
+| [Examples](examples/) | Sample contracts, fixtures, TOML suites, and the local demo service |
+| [Validator notes](docs/VALIDATOR.md) | Supported inputs, schema validation decisions, and limitations |
+| [Release candidate verification](docs/RELEASE_CANDIDATE.md) | Packaging checks and results from independent projects |
+| [Brand guidelines](docs/BRANDING.md) | Official logos, design tokens, and documentation conventions |
+| [Security policy](SECURITY.md) | Test scope and private vulnerability reporting |
 
-Gli avvisi e i FAIL già presenti sono visibili nel riepilogo e non bloccano da soli il confronto.
+## Contributing
 
-## Test e integrazione in main
+Follow the [contribution guide](CONTRIBUTING.md) to set up the development environment and run checks. CI verifies linting, types, tests with a 96% combined statement and branch coverage floor, and installation from both wheel and source distribution on Linux and macOS with Python 3.12. Pull requests into `main` require the **EndNext merge gate**.
 
-```sh
-.venv/bin/python -m pip install -e '.[dev]'
-.venv/bin/python -m pytest --cov --cov-report=term-missing --cov-report=xml
-```
+When a change affects CLI behavior, report formats, or a user workflow, update the relevant README sections, examples, or guides in the same pull request and verify the commands you changed.
 
-La soglia del 96% combina righe e rami e include le invocazioni della CLI in processi separati. Per integrare un branch, apri una pull request verso `main` e attendi il check obbligatorio **EndNext merge gate**. La CI esegue Ruff, mypy, la suite con coverage e una prova da wheel e sdist su Linux e macOS con Python 3.12. I report di copertura XML sono disponibili tra gli artefatti del workflow.
+## License
 
-## Identità visiva
-
-Le [linee guida del marchio](docs/BRANDING.md) raccolgono gli asset ufficiali, i token e le convenzioni per CLI, documentazione e diagrammi.
+EndNext is available under the [MIT License](LICENSE).

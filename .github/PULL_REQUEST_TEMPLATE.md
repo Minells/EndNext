@@ -18,3 +18,4 @@ Report suspected vulnerabilities privately via https://github.com/Minells/EndNex
 ## Documentation
 
 <!-- List updated docs or examples, or explain why no update is needed. -->
+- [ ] For user-facing changes, update the relevant README sections, guides, or examples in this PR and verify any changed commands.
