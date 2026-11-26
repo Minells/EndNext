@@ -56,6 +56,8 @@ produces a wheel and source distribution under `dist/`. CI installs both in
 clean environments and exercises the CLI on Linux and macOS.
 The **Audit Python dependencies** job checks the resolved Python environment,
 including transitive dependencies, against published PyPI advisories.
+The [M6 verification report](docs/RELEASE_CANDIDATE.md) records the package
+checks and examples from independent projects.
 
 ## Open a pull request
 
@@ -69,5 +71,9 @@ including transitive dependencies, against published PyPI advisories.
 4. Include regression coverage for behavior changes and update affected
    documentation or examples. A pull request is ready to merge after the
    maintainer has reviewed the change and **EndNext merge gate** passes.
+
+GitHub deletes the source branch after the pull request merges. Update your
+local `main` and remove your work branch once you have confirmed that its
+changes are included.
 
 [issues]: https://github.com/Minells/EndNext/issues

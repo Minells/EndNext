@@ -122,6 +122,8 @@ Separare gli esiti del servizio dagli errori degli input e dello strumento. Il r
 
 **Test e rischio.** Installazione pulita da wheel e sdist, contenuto dei pacchetti e lettura dei report campione. Scegliere progetti con schemi, parametri e requisiti d’accesso diversi. Registrare separatamente eventuali prove in attesa di feedback esterno.
 
+**Decisione del 26 novembre 2026.** Il proprietario ha rinunciato alla prova del quickstart da parte di un maintainer indipendente per l’integrazione di M6. Il versionamento e la pubblicazione restano decisioni separate. [Resoconto delle verifiche](RELEASE_CANDIDATE.md)
+
 ## Calendario indicativo
 
 Ipotesi di 8 ore settimanali e pausa dal 23 al 29 dicembre. Se l’avvio slitta, spostare le finestre mantenendo ordine e criteri di uscita.

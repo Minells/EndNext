@@ -6,6 +6,13 @@ EndNext is in pre-release development. The `main` branch is the only line
 maintained for security fixes at this stage. Older snapshots and release
 candidate branches do not receive backports.
 
+## Use live checks within scope
+
+Run `endnext scan` only against a loopback service you are authorized to test.
+Specify the origin, port, and path prefix, and select the positive GET cases
+approved for that service. Keep real credentials and traffic out of examples
+and shared reports.
+
 ## Report a vulnerability privately
 
 [Open a private vulnerability report][report] through GitHub. If the direct
