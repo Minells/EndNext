@@ -88,6 +88,7 @@ jobs:
           project_env="$RUNNER_TEMP/endnext-dependencies"
           python -m venv "$project_env"
           project_python="$project_env/bin/python"
+          "$project_python" -m pip install --upgrade 'pip>=26.2'
           "$project_python" -m pip install -e '.[dev]' build
 
           python -m pip install 'pip-audit==2.10.1'
