@@ -1,0 +1,22 @@
+name: Feature request
+description: Propose a change to EndNext or its documentation.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue will be public. Follow the [Security Policy](https://github.com/Minells/EndNext/security/policy)
+        for suspected vulnerabilities. Keep sensitive data out of examples.
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What are you trying to do, and where does the current workflow fall short?
+    validations:
+      required: true
+  - type: textarea
+    id: desired-behavior
+    attributes:
+      label: Desired behavior
+      description: Describe the outcome and any workaround you have tried.
+    validations:
+      required: true

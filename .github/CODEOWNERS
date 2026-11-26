@@ -1,0 +1,12 @@
+# CI, dependency management, and repository policy
+/.github/ @Minells
+/.gitignore @Minells
+/SECURITY.md @Minells
+/CODE_OF_CONDUCT.md @Minells
+/CONTRIBUTING.md @Minells
+
+# Packaging and application code, including input validation and HTTP transport
+/pyproject.toml @Minells
+/MANIFEST.in @Minells
+/src/endnext/ @Minells
+/tests/ @Minells
