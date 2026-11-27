@@ -17,16 +17,20 @@ def main():
     parser.add_argument("client", choices=("retry", "single"))
     parser.add_argument("output", type=Path)
     parser.add_argument("--upstream", default="http://127.0.0.1:8767")
+    parser.add_argument(
+        "--scenario",
+        type=Path,
+        default=Path(__file__).with_name("resilience-proxy.toml"),
+    )
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     observation = args.output / "client.json"
     trace = args.output / "proxy.jsonl"
-    scenario = Path(__file__).with_name("resilience-proxy.toml")
     with subprocess.Popen(
         [
             "endnext",
             "resilience-proxy",
-            str(scenario),
+            str(args.scenario),
             "--upstream",
             args.upstream,
             "--authorized",

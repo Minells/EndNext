@@ -3,7 +3,7 @@
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .evidence import Assertion, Verdict
@@ -90,6 +90,10 @@ class ProxyTrace:
         if (
             ready.get("case") != scenario.name
             or ready.get("scenario_digest") != f"sha256:{scenario.digest}"
+            or ready.get("generation")
+            != (
+                asdict(scenario.generation) if scenario.generation is not None else None
+            )
         ):
             raise InputError("The proxy trace does not match the supplied scenario.")
         if any(event.get("run_id") != run_id for event in events):

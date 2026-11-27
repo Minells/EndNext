@@ -92,6 +92,7 @@ Contracts can be local JSON or JSON-compatible YAML files up to 1 MiB, with refe
 | `plan` | Previews selected operations, effective security, skipped cases, candidate assertions, and estimated request cost entirely offline. |
 | `scan` | Runs explicitly configured GET cases against an authorized loopback service, including access checks with named bearer profiles. |
 | `resilience` | Replays simulated dependency outcomes and checks attempts, final status, and recovery time. |
+| `resilience-generate` | Uses a seed to turn a template's alternatives into a concrete TOML scenario. |
 | `resilience-proxy` | Applies a fault sequence to HTTP/1.1 requests and forwards selected steps to an authorized loopback dependency. |
 | `resilience-check` | Checks a saved proxy trace and real client measurement against a resilience scenario. |
 | `report` | Renders saved v1 and v2 JSON evidence as terminal output or Markdown while preserving verdicts, provenance, and counts. |
@@ -174,6 +175,22 @@ The `retry` client reaches HTTP 200 in three attempts and 200 simulated millisec
 Set `outcome` in each `[[steps]]` table to an HTTP status from 200 to 599, `"timeout"`, or `"disconnect"`. An optional `delay_ms` adds to the simulated clock. A scenario uses at most 20 steps, with up to 5000 ms per step and 60000 ms total. The demo's `retry` client allows up to three attempts and retries HTTP 429, HTTP 503, and both simulated transport errors. The ordered steps and input digest make a run replayable. The JSON report includes the outcome and accumulated simulated latency for each attempt.
 
 For a sequential Python client under test, load `endnext.resilience.Scenario` and pass a callable to `endnext.resilience.run_scenario`. The callable receives an in-process HTTPX client for `GET /dependency` and returns a final HTTP status or `None`. The adapter opens no sockets. The timing assertion measures scripted dependency latency. [HTTPX mock transports](https://www.python-httpx.org/advanced/transports/#mock-transports)
+
+### Generate and replay a seeded scenario
+
+In a [scenario template](examples/resilience-template.toml), a step can list two to twenty `alternatives`. Each alternative is a step with `outcome` and an optional `delay_ms`. Fixed steps use their existing syntax. Generate the concrete file offline, then use that file when comparing two runs.
+
+```sh
+replay_dir=$(mktemp -d)
+endnext resilience-generate examples/resilience-template.toml --seed 42 > "$replay_dir/scenario.toml"
+endnext resilience "$replay_dir/scenario.toml" --client retry --format json > baseline.json
+endnext resilience "$replay_dir/scenario.toml" --client single --format json > current.json
+endnext diff baseline.json current.json
+```
+
+Seed `42` selects HTTP 503, 429, and 200 for this template. Seed `7` selects a disconnect, HTTP 503, and HTTP 200. The same template bytes and seed produce the same concrete file byte for byte. `generation` records the seed, algorithm, and template digest, and `scenario_digest` identifies the concrete file in the evidence. Keep that file or regenerate it from the recorded template and seed when reproducing a finding.
+
+`resilience-proxy` and `resilience-check` also accept the concrete file. Use a fixed `outcome = "forward"` in the template when a step should contact the authorized loopback dependency. Pass `--scenario` to the live demo to use the generated file. The proxy `ready` event and resilience JSON reports carry the same generation metadata.
 
 ### Exercise a local dependency over HTTP/1.1
 

@@ -22,6 +22,7 @@ from .resilience import OPERATION as DEPENDENCY_OPERATION
 from .resilience import Scenario, demo_client, resilience_exit_code, run_scenario
 from .resilience_evidence import ClientObservation, ProxyTrace, assess_client
 from .resilience_proxy import serve_proxy
+from .resilience_scenario import materialize_scenario
 from .rules import verify
 from .scan import ScanRun, scan
 from .transport import Target
@@ -70,6 +71,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     resilience.add_argument("--client", choices=("retry", "single"), default="retry")
     resilience.add_argument("--format", choices=("text", "json"), default="text")
+    generate = commands.add_parser(
+        "resilience-generate", help="Materialize a seeded resilience template as TOML."
+    )
+    generate.add_argument("template", type=Path, help="Local TOML resilience template")
+    generate.add_argument(
+        "--seed", type=int, required=True, help="Seed from 0 to 2^63 - 1"
+    )
     proxy = commands.add_parser(
         "resilience-proxy", help="Serve a bounded HTTP/1.1 scenario on loopback."
     )
@@ -149,6 +157,9 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0
+        if args.command == "resilience-generate":
+            print(materialize_scenario(args.template, args.seed), end="")
+            return 0
         if args.command == "resilience":
             return _show_resilience(
                 Scenario.load(args.scenario), args.client, engine_version, args.format
@@ -220,6 +231,11 @@ def _show_resilience_json(
                 "engine_version": engine_version,
                 "run_id": run_id,
                 "scenario_digest": f"sha256:{scenario.digest}",
+                **(
+                    {"generation": asdict(scenario.generation)}
+                    if scenario.generation is not None
+                    else {}
+                ),
                 **details,
                 "cases": [
                     {
