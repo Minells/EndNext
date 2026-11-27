@@ -1,4 +1,5 @@
 import json
+from importlib.metadata import version
 from unittest.mock import Mock
 
 from test_check import CONTRACT, SENTINEL, run_cli, write_json
@@ -12,6 +13,30 @@ def test_help_is_plain_when_redirected():
         assert result.returncode == 0 and not result.stderr
         assert result.stdout.startswith("EndNext\n\nusage:")
         assert result.stdout.isascii()
+
+
+def test_installed_cli_advertises_compatible_commands_and_version():
+    help_result = run_cli("--help")
+    assert help_result.returncode == 0 and not help_result.stderr
+    for name in (
+        "inspect",
+        "check",
+        "plan",
+        "scan",
+        "report",
+        "diff",
+        "resilience",
+        "resilience-generate",
+        "resilience-proxy",
+        "resilience-check",
+        "correlate",
+    ):
+        assert any(
+            line.split()[:1] == [name] for line in help_result.stdout.splitlines()
+        )
+    installed = run_cli("--version")
+    assert installed.returncode == 0 and not installed.stderr
+    assert installed.stdout == f"endnext {version('endnext')}\n"
 
 
 def test_terminal_help_branding_respects_the_terminal(monkeypatch):

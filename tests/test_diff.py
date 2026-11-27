@@ -101,6 +101,71 @@ def test_fingerprint_ignores_operation_id_fixture_name_and_record_order(tmp_path
     )
 
 
+@pytest.mark.parametrize(
+    ("field", "profile", "digest"),
+    [
+        (
+            "/quantità",
+            None,
+            "faec54074514056e8280d9e353e0f4feb26b9311bdfb954b6928702be6734224",
+        ),
+        (
+            "/quantità",
+            "demo",
+            "8b99e6d84baa69b1edd283e0f9eb877d6d48b47f5ea13e7af2014f1f184cff94",
+        ),
+        (
+            None,
+            None,
+            "81a302edf423fb3f64b279ef7abb5a5f83af03927fab09b9f7708a031898d086",
+        ),
+        ("", None, "d4e45cd101678721f25ce9bcc3291009dde9562fd3ae1ba6493a744ae60c0fc6"),
+    ],
+)
+def test_legacy_and_current_reports_keep_the_same_fingerprint(
+    tmp_path, field, profile, digest
+):
+    legacy = _record("caffè", "FAIL", field=field)
+    if profile:
+        legacy["auth_profile"] = profile
+    baseline = write_json(tmp_path / "v1.json", {"schema_version": "1", **legacy})
+
+    updated = _record("caffè", "FAIL", field=field, operation_id="renamed")
+    updated["operation"]["method"] = "get"
+    updated["assertions"] = [updated.pop("assertion")]
+    updated["auth_profile"] = profile
+    current = write_json(
+        tmp_path / "v2.json",
+        {
+            "schema_version": "2",
+            "cases": [updated],
+            "counts": {
+                "ERROR": 0,
+                "INCONCLUSIVE": 0,
+                "FAIL": 1,
+                "WARN": 0,
+                "PASS": 0,
+                "SKIPPED": 0,
+            },
+        },
+    )
+
+    for path in (baseline, current):
+        report = run_cli("report", path, "--format", "markdown", offline=True)
+        assert report.returncode == 0 and not report.stderr
+        assert "FAIL 1" in report.stdout and "caffè" in report.stdout
+
+    result = _diff(baseline, current)
+    assert result.returncode == 0 and not result.stderr
+    data = json.loads(result.stdout)
+    assert data["schema_version"] == "1" and data["kind"] == "baseline_diff"
+    assert data["exit_code"] == 0 and data["compared_checks"] == 1
+    (change,) = data["changes"]
+    assert change["kind"] == "existing_failure"
+    expected = {"verdict": "FAIL", "field": field, "fingerprint": f"sha256:{digest}"}
+    assert change["baseline"] == change["current"] == expected
+
+
 def test_relocated_failure_has_a_new_fingerprint(tmp_path):
     paths = _saved_reports(
         tmp_path,

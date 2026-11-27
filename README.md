@@ -307,6 +307,30 @@ Existing failures and warnings remain visible in the summary. A passing assertio
 | `1` | A failing assertion | At least one new failure |
 | `2` | Invalid input, execution error, or a blocking incomplete check | Invalid input, no comparable checks, or incomplete verification |
 
+### Compatibility
+
+For automation, use the documented command names, options, exit codes, and
+structured output. Terminal and Markdown output are intended for people.
+For commands that write JSON, a finding or an incomplete run can still produce
+evidence. Check the exit code as well as the output before using it as a baseline.
+
+`report` and `diff` read evidence reports with `schema_version` `"1"` or `"2"`.
+You can compare a saved v1 baseline directly with v2 evidence. V1 records can
+carry a single assertion, and the reader derives counts from the assertions
+present. V2 records carry `assertions` arrays and aggregate `counts` that must
+match those arrays. Both versions support an individual case or a `cases`
+array. The JSON emitted by `diff` has its own schema (`baseline_diff`, version
+`"1"`). Save the original evidence files for future comparisons.
+
+The same finding has the same fingerprint across compatible report versions.
+`diff` and `correlate` use `sha256:` followed by the lowercase SHA-256 hex digest
+of a compact JSON array with non-ASCII characters escaped. In order, its fields
+are the uppercased HTTP method, exact path template, case name, source kind,
+rule identifier, and field location. A nonempty authentication profile name is
+appended when present. An absent field is JSON `null`, and the root JSON pointer
+is the empty string. Operation IDs, fixture filenames, run IDs, assertion
+order, verdicts, and message text are outside the fingerprint.
+
 ## Documentation
 
 | Resource | What you’ll find |

@@ -52,6 +52,7 @@ class CheckKey:
         )
 
     def fingerprint(self, field: str | None) -> str:
+        # Preserve the encoding used by saved comparisons, including profile omission.
         parts: tuple[str | None, ...] = (
             self.method,
             self.path_template,
