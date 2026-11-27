@@ -340,6 +340,7 @@ order, verdicts, and message text are outside the fingerprint.
 | [Examples](examples/) | Sample contracts, fixtures, TOML suites, and the local demo service |
 | [Validator notes](docs/VALIDATOR.md) | Supported inputs, schema validation decisions, and limitations |
 | [Python API v1](docs/PYTHON_API.md) | Verify multiple local response fixtures against one loaded contract |
+| [Offline benchmark](docs/BENCHMARK.md) | Reproduce the synthetic accuracy and contract reuse measurements |
 | [Release candidate verification](docs/RELEASE_CANDIDATE.md) | Packaging checks and results from independent projects |
 | [Brand guidelines](docs/BRANDING.md) | Official logos, design tokens, and documentation conventions |
 | [Security policy](SECURITY.md) | Test scope and private vulnerability reporting |
