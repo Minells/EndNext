@@ -2,7 +2,7 @@ name = "dependency-retry"
 expected_status = 200
 min_attempts = 3
 max_attempts = 3
-recovery_budget_ms = 250
+recovery_budget_ms = 2000
 
 [[steps]]
 outcome = 503

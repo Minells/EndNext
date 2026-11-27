@@ -4,12 +4,15 @@ import time
 from collections.abc import Callable
 from contextlib import ExitStack
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from socketserver import TCPServer
+from uuid import uuid4
 
 import httpx
 
 from .inputs import InputError
 from .resilience import OPERATION, Scenario, Step
+from .resilience_evidence import TRACE_VERSION, ClientObservation
 from .transport import (
     REQUEST_TIMEOUT,
     Acquisition,
@@ -91,13 +94,20 @@ class _Handler(BaseHTTPRequestHandler):
 
 class _Proxy(HTTPServer):
     def __init__(
-        self, port: int, scenario: Scenario, transport: LoopbackTransport, emit: Emit
+        self,
+        port: int,
+        scenario: Scenario,
+        transport: LoopbackTransport,
+        emit: Emit,
+        observation: Path | None,
     ):
         self.scenario = scenario
         self.transport = transport
         self.emit = emit
         self.attempts = 0
         self.problem: str | None = None
+        self.observation = observation
+        self.run_id = str(uuid4())
         self.started = time.monotonic()
         super().__init__((_HOST, port), _Handler)
 
@@ -118,34 +128,68 @@ class _Proxy(HTTPServer):
         self.problem = "listener_error"
 
     def run(self) -> int:
+        observation_digest = None
         try:
             self.emit(
                 {
                     "event": "ready",
+                    "trace_version": TRACE_VERSION,
+                    "run_id": self.run_id,
                     "origin": f"http://{self.authority}",
                     "case": self.scenario.name,
                     "scenario_digest": f"sha256:{self.scenario.digest}",
                 }
             )
-            while self.attempts < len(self.scenario.steps) and self.problem is None:
-                self.timeout = self.remaining
-                if self.timeout <= 0:
+            while self.problem is None:
+                if self.observation is None and self.attempts == len(
+                    self.scenario.steps
+                ):
+                    break
+                remaining = self.remaining
+                if remaining <= 0:
                     self.problem = _DEADLINE
                     break
+                self.timeout = remaining
+                if self.observation is not None:
+                    observation_digest = self._observation_digest(self.observation)
+                    if observation_digest is not None or self.problem is not None:
+                        break
+                    self.timeout = min(remaining, 0.1)
                 self.handle_request()
         except KeyboardInterrupt:
             self.problem = "interrupted"
+        reason = (
+            "complete"
+            if self.attempts == len(self.scenario.steps)
+            else "client_finished"
+        )
         self.emit(
             {
                 "event": "finished",
-                "reason": self.problem or "complete",
+                "run_id": self.run_id,
+                "reason": self.problem or reason,
                 "attempts": self.attempts,
                 "upstream_requests_sent": self.transport.sent,
+                "client_observation_digest": observation_digest,
             }
         )
         return 2 if self.problem is not None else 0
 
+    def _observation_digest(self, path: Path) -> str | None:
+        if not path.exists():
+            return None
+        try:
+            observation = ClientObservation.load(path)
+            return observation.digest if observation.run_id == self.run_id else None
+        except InputError:
+            self.problem = "client_observation_invalid"
+            return None
+
     def step(self) -> Acquisition:
+        if self.attempts == len(self.scenario.steps):
+            self.attempts += 1
+            self.problem = "scenario_exhausted"
+            return Acquisition(status=502, problem=self.problem)
         step = self.scenario.steps[self.attempts]
         self.attempts += 1
         reply = self._execute(step)
@@ -153,6 +197,7 @@ class _Proxy(HTTPServer):
         self.emit(
             {
                 "event": "step",
+                "run_id": self.run_id,
                 "attempt": self.attempts,
                 "outcome": step.outcome,
                 "status": reply.status,
@@ -188,7 +233,13 @@ class _Proxy(HTTPServer):
 
 
 def serve_proxy(
-    scenario: Scenario, *, upstream: str, authorized: bool, port: int, emit: Emit
+    scenario: Scenario,
+    *,
+    upstream: str,
+    authorized: bool,
+    port: int,
+    emit: Emit,
+    observation: Path | None = None,
 ) -> int:
     if not 0 <= port <= 65535:
         raise InputError("The proxy port must be an integer from 0 to 65535.")
@@ -208,7 +259,7 @@ def serve_proxy(
         ) from None
     transport = LoopbackTransport(target, len(scenario.steps))
     try:
-        with _Proxy(port, scenario, transport, emit) as proxy:
+        with _Proxy(port, scenario, transport, emit, observation) as proxy:
             if target.origin == httpx.URL(
                 f"{target.origin.scheme}://{proxy.authority}"
             ):

@@ -13,13 +13,14 @@ from uuid import uuid4
 from .baseline import compare, render_diff
 from .branding import help_heading
 from .contract import Contract
-from .evidence import Inventory, Operation, counts, primary, report
+from .evidence import Assertion, Inventory, Operation, counts, primary, report
 from .inputs import Fixture, InputError
 from .planner import Plan, PlanConfig, build_plan
 from .reporting import SavedReport, format_counts, render
 from .reporting import safe_terminal as _terminal
-from .resilience import OPERATION as SIMULATED_OPERATION
-from .resilience import Scenario, demo_client, run_scenario
+from .resilience import OPERATION as DEPENDENCY_OPERATION
+from .resilience import Scenario, demo_client, resilience_exit_code, run_scenario
+from .resilience_evidence import ClientObservation, ProxyTrace, assess_client
 from .resilience_proxy import serve_proxy
 from .rules import verify
 from .scan import ScanRun, scan
@@ -89,6 +90,21 @@ def main(argv: list[str] | None = None) -> int:
         default=8766,
         help="Local listener port, or 0 for a free port",
     )
+    proxy.add_argument(
+        "--observation", type=Path, help="Close after observing completion for this run"
+    )
+    live_check = commands.add_parser(
+        "resilience-check",
+        help="Verify a saved proxy trace and real client observation offline.",
+    )
+    live_check.add_argument(
+        "scenario", type=Path, help="Local TOML resilience scenario"
+    )
+    live_check.add_argument("trace", type=Path, help="Saved proxy JSON Lines trace")
+    live_check.add_argument(
+        "observation", type=Path, help="Saved client measurement JSON"
+    )
+    live_check.add_argument("--format", choices=("text", "json"), default="text")
     report_command = commands.add_parser(
         "report", help="Render a saved JSON evidence report."
     )
@@ -144,6 +160,16 @@ def main(argv: list[str] | None = None) -> int:
                 authorized=args.authorized,
                 port=args.port,
                 emit=lambda event: print(json.dumps(event), flush=True),
+                observation=args.observation,
+            )
+        if args.command == "resilience-check":
+            scenario = Scenario.load(args.scenario, allow_forward=True)
+            return _show_resilience_check(
+                scenario,
+                ProxyTrace.load(args.trace, scenario),
+                ClientObservation.load(args.observation),
+                engine_version,
+                args.format,
             )
         contract = Contract.load(args.contract)
         if args.command == "inspect":
@@ -179,39 +205,87 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
 
+def _show_resilience_json(
+    scenario: Scenario,
+    engine_version: str,
+    run_id: str,
+    source: str,
+    assertions: tuple[Assertion, ...],
+    details: dict[str, object],
+) -> None:
+    print(
+        json.dumps(
+            {
+                "schema_version": "2",
+                "engine_version": engine_version,
+                "run_id": run_id,
+                "scenario_digest": f"sha256:{scenario.digest}",
+                **details,
+                "cases": [
+                    {
+                        "case": scenario.name,
+                        "operation": asdict(DEPENDENCY_OPERATION),
+                        "source": source,
+                        "assertions": [asdict(assertion) for assertion in assertions],
+                    }
+                ],
+                "counts": counts(assertions),
+            },
+            indent=2,
+        )
+    )
+
+
+def _show_resilience_check(
+    scenario: Scenario,
+    trace: ProxyTrace,
+    observation: ClientObservation,
+    engine_version: str,
+    output_format: str,
+) -> int:
+    assertions = assess_client(scenario, trace, observation)
+    if output_format == "json":
+        _show_resilience_json(
+            scenario,
+            engine_version,
+            trace.run_id,
+            "live_proxy",
+            assertions,
+            {
+                "final_status": observation.status,
+                "client_elapsed_ms": observation.elapsed_ms,
+                "dependency_attempts": trace.attempts,
+                "upstream_requests_sent": trace.upstream_requests_sent,
+                "client_observation_digest": trace.observation_digest,
+            },
+        )
+    else:
+        print(f"{scenario.name} · proxy run {trace.run_id}")
+        for assertion in assertions:
+            print(f"  {assertion.verdict} {assertion.rule} · {assertion.reason}")
+        print(format_counts(counts(assertions)))
+    return resilience_exit_code(assertions)
+
+
 def _show_resilience(
     scenario: Scenario, client: str, engine_version: str, output_format: str
 ) -> int:
     run = run_scenario(
         scenario, partial(demo_client, attempts=3 if client == "retry" else 1)
     )
-    totals = counts(run.assertions)
     if output_format == "json":
-        print(
-            json.dumps(
-                {
-                    "schema_version": "2",
-                    "engine_version": engine_version,
-                    "run_id": str(uuid4()),
-                    "scenario_digest": f"sha256:{scenario.digest}",
-                    "client": client,
-                    "final_status": run.final_status,
-                    "simulated_elapsed_ms": run.elapsed_ms,
-                    "events": [asdict(event) for event in run.events],
-                    "cases": [
-                        {
-                            "case": scenario.name,
-                            "operation": asdict(SIMULATED_OPERATION),
-                            "source": "simulated_http",
-                            "assertions": [
-                                asdict(assertion) for assertion in run.assertions
-                            ],
-                        }
-                    ],
-                    "counts": totals,
-                },
-                indent=2,
-            )
+        _show_resilience_json(
+            scenario,
+            engine_version,
+            str(uuid4()),
+            "simulated_http",
+            run.assertions,
+            {
+                "client": client,
+                "final_status": run.final_status,
+                "simulated_elapsed_ms": run.elapsed_ms,
+                "events": [asdict(event) for event in run.events],
+            },
         )
     else:
         print(f"{scenario.name} · {client} client · simulated HTTP")
@@ -226,7 +300,7 @@ def _show_resilience(
             )
         for assertion in run.assertions:
             print(f"  {assertion.verdict} {assertion.rule} · {assertion.reason}")
-        print(format_counts(totals))
+        print(format_counts(counts(run.assertions)))
     return run.exit_code
 
 

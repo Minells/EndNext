@@ -93,10 +93,11 @@ Contracts can be local JSON or JSON-compatible YAML files up to 1 MiB, with refe
 | `scan` | Runs explicitly configured GET cases against an authorized loopback service, including access checks with named bearer profiles. |
 | `resilience` | Replays simulated dependency outcomes and checks attempts, final status, and recovery time. |
 | `resilience-proxy` | Applies a fault sequence to HTTP/1.1 requests and forwards selected steps to an authorized loopback dependency. |
+| `resilience-check` | Checks a saved proxy trace and real client measurement against a resilience scenario. |
 | `report` | Renders saved v1 and v2 JSON evidence as terminal output or Markdown while preserving verdicts, provenance, and counts. |
 | `diff` | Compares two evidence files and identifies new failures, resolved failures, and checks that could not be verified. |
 
-Use `--format json` with `inspect`, `check`, `plan`, `scan`, `resilience`, or `diff` to get structured output on stdout.
+Use `--format json` with `inspect`, `check`, `plan`, `scan`, `resilience`, `resilience-check`, or `diff` to get structured output on stdout.
 
 ### Preview a suite offline
 
@@ -201,7 +202,26 @@ The client receives HTTP 503, HTTP 429, then the upstream HTTP 200 with `healthy
 
 The proxy accepts only HTTP/1.1 `GET /dependency` on `127.0.0.1`. The upstream must be a literal loopback origin with an explicit port. Port `0` chooses a free listener port. The proxy uses the scenario's ordered steps. A `forward` step fetches the fixed route from the upstream. Each `delay_ms` is applied in real time. A `disconnect` step closes the connection, and a `timeout` step holds it open for a positive `delay_ms` before closing. Set the test client's read timeout below that delay to observe a timeout.
 
-One connection is handled at a time. The replay has a 60-second deadline and uses the scan transport's bounded upstream requests and response reads. Each upstream request is constructed by EndNext. Forwarded replies carry only the status, media type, and bounded body, including for redirect responses. The JSON Lines trace records proxy events. Use `resilience` for offline assertions on the demo client's final status, attempts, and recovery time.
+One connection is handled at a time. The replay has a 60-second deadline and uses the scan transport's bounded upstream requests and response reads. Each upstream request is constructed by EndNext. Forwarded replies carry only the status, media type, and bounded body, including for redirect responses. Every record in the JSON Lines trace carries the proxy run ID.
+
+### Compare real client recovery
+
+With the synthetic dependency running on port 8767, capture separate HTTP/1.1 runs for the two demo clients. Each run uses its own listener and the same scenario file.
+
+```sh
+python examples/resilience_live_demo.py retry live-retry
+python examples/resilience_live_demo.py single live-single
+endnext resilience-check examples/resilience-proxy.toml live-retry/proxy.jsonl live-retry/client.json --format json > baseline.json
+endnext resilience-check examples/resilience-proxy.toml live-single/proxy.jsonl live-single/client.json --format json > current.json
+endnext report current.json
+endnext diff baseline.json current.json
+```
+
+The retrying client reaches HTTP 200 in three attempts against a two-second recovery budget. The single-attempt client stops at HTTP 503. Its report has two failures and a skipped recovery-time check. The second `resilience-check` and `diff` exit with code `1`.
+
+To use your own client, start `resilience-proxy` with `--observation client.json`. After the client finishes, atomically publish a JSON object with `run_id` from the `ready` event, `status` as the client's final HTTP status or `null`, and `elapsed_ms` as the client's total elapsed time in milliseconds. The proxy waits for the matching observation within the run deadline. It can finish early when the client stops before the sequence ends. A request beyond the scripted sequence before the observation is recorded ends the run with an execution error.
+
+`resilience-check` loads both files offline. It verifies the run ID and the digests of the scenario and client measurement. It counts dependency attempts from the trace and uses the client measurement for final status and recovery time. An unconfirmed client completion, an interrupted run, or a run without observed attempts yields `INCONCLUSIVE`. A reported proxy execution error yields `ERROR`. Both exit with code `2`. Assessment requires a versioned proxy trace with run IDs.
 
 ## Reports and evidence
 

@@ -161,10 +161,14 @@ class ResilienceRun:
 
     @property
     def exit_code(self) -> int:
-        verdict = primary(self.assertions).verdict
-        if verdict in {"ERROR", "INCONCLUSIVE"}:
-            return 2
-        return int(verdict == "FAIL")
+        return resilience_exit_code(self.assertions)
+
+
+def resilience_exit_code(assertions: tuple[Assertion, ...]) -> int:
+    verdict = primary(assertions).verdict
+    if verdict in {"ERROR", "INCONCLUSIVE"}:
+        return 2
+    return int(verdict == "FAIL")
 
 
 def run_scenario(
@@ -214,7 +218,7 @@ def run_scenario(
         )
         result = None
     else:
-        assertions = _evaluate(
+        assertions = evaluate_outcome(
             scenario, result, len(dependency.events), dependency.elapsed_ms
         )
     return ResilienceRun(
@@ -222,8 +226,15 @@ def run_scenario(
     )
 
 
-def _evaluate(
-    scenario: Scenario, result: int | None, attempts: int, elapsed_ms: int
+def evaluate_outcome(
+    scenario: Scenario,
+    result: int | None,
+    attempts: int,
+    elapsed_ms: int,
+    *,
+    timing_basis: Literal[
+        "simulated latency", "client elapsed time"
+    ] = "simulated latency",
 ) -> tuple[Assertion, ...]:
     recovered = result == scenario.expected_status
     status = Assertion(
@@ -243,14 +254,14 @@ def _evaluate(
         f"Observed {attempts} dependency attempts.",
     )
     recovery_expectation = (
-        f"Recovery within {scenario.recovery_budget_ms} ms of simulated latency."
+        f"Recovery within {scenario.recovery_budget_ms} ms of {timing_basis}."
     )
     if recovered:
         time = Assertion(
             "resilience.recovery_time",
             "PASS" if elapsed_ms <= scenario.recovery_budget_ms else "FAIL",
             recovery_expectation,
-            f"Observed recovery after {elapsed_ms} ms of simulated latency.",
+            f"Observed recovery after {elapsed_ms} ms of {timing_basis}.",
         )
     else:
         time = Assertion(
@@ -268,7 +279,7 @@ def demo_client(session: httpx.Client, *, attempts: int) -> int | None:
     for _ in range(attempts):
         try:
             status = session.get(OPERATION.path_template).status_code
-        except (httpx.ReadTimeout, httpx.ReadError):
+        except (httpx.ReadTimeout, httpx.ReadError, httpx.RemoteProtocolError):
             status = None
         if status not in (None, 429, 503):
             break
