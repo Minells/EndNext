@@ -31,7 +31,7 @@ def _scenario(tmp_path, steps):
 
 
 @contextmanager
-def _start(upstream, scenario=SCENARIO, *, observation=None):
+def _start(upstream, scenario=SCENARIO, *, observation=None, ready_path=None):
     options = ["--observation", str(observation)] if observation is not None else []
     with subprocess.Popen(
         [
@@ -53,10 +53,13 @@ def _start(upstream, scenario=SCENARIO, *, observation=None):
             assert select([process.stdout], [], [], 20)[0], (
                 "Proxy did not publish readiness"
             )
-            first = json.loads(process.stdout.readline())
+            first_line = process.stdout.readline()
+            first = json.loads(first_line)
             assert first["event"] == "ready"
             assert first["origin"].startswith("http://127.0.0.1:")
             assert first["scenario_digest"].startswith("sha256:")
+            if ready_path is not None:
+                ready_path.write_text(first_line)
             yield process, first["origin"] + "/dependency"
         finally:
             if process.poll() is None:

@@ -7,7 +7,7 @@ from typing import Literal
 
 from .evidence import Assertion, Verdict
 from .inputs import InputError
-from .reporting import SavedReport, safe_terminal
+from .reporting import ReportCase, SavedReport, safe_terminal
 
 type ChangeKind = Literal[
     "new_failure",
@@ -39,6 +39,17 @@ class CheckKey:
     source: str
     rule: str
     auth_profile: str = ""
+
+    @classmethod
+    def for_case(cls, case: ReportCase, rule: str) -> "CheckKey":
+        return cls(
+            case.operation.method.upper(),
+            case.operation.path_template,
+            case.name,
+            case.source,
+            rule,
+            case.auth_profile or "",
+        )
 
     def fingerprint(self, field: str | None) -> str:
         parts: tuple[str | None, ...] = (
@@ -93,14 +104,7 @@ def _checks(report: SavedReport) -> dict[CheckKey, Assertion]:
     indexed = {}
     for case in report.cases:
         for assertion in case.assertions:
-            key = CheckKey(
-                case.operation.method.upper(),
-                case.operation.path_template,
-                case.name,
-                case.source,
-                assertion.rule,
-                case.auth_profile or "",
-            )
+            key = CheckKey.for_case(case, assertion.rule)
             if key in indexed:
                 raise InputError(
                     "A report contains duplicate assertions for the same case, operation, source, rule and profile."

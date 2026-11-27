@@ -13,6 +13,7 @@ from uuid import uuid4
 from .baseline import compare, render_diff
 from .branding import help_heading
 from .contract import Contract
+from .correlation import correlate, render_correlation
 from .evidence import Assertion, Inventory, Operation, counts, primary, report
 from .inputs import Fixture, InputError
 from .planner import Plan, PlanConfig, build_plan
@@ -20,7 +21,12 @@ from .reporting import SavedReport, format_counts, render
 from .reporting import safe_terminal as _terminal
 from .resilience import OPERATION as DEPENDENCY_OPERATION
 from .resilience import Scenario, demo_client, resilience_exit_code, run_scenario
-from .resilience_evidence import ClientObservation, ProxyTrace, assess_client
+from .resilience_evidence import (
+    ClientObservation,
+    ProxyReference,
+    ProxyTrace,
+    assess_client,
+)
 from .resilience_proxy import serve_proxy
 from .resilience_scenario import materialize_scenario
 from .rules import verify
@@ -63,6 +69,21 @@ def main(argv: list[str] | None = None) -> int:
     scan_command = commands.add_parser(
         "scan", help="Check explicitly authorized loopback GET cases."
     )
+    scan_command.add_argument(
+        "--proxy-trace", type=Path, help="A proxy trace containing its ready event"
+    )
+    scan_command.add_argument(
+        "--proxy-observation",
+        type=Path,
+        help="Write the measured client observation for the proxy",
+    )
+    correlate_command = commands.add_parser(
+        "correlate",
+        help="Join scan findings with a completed proxy assessment offline.",
+    )
+    correlate_command.add_argument("scan_report", type=Path)
+    correlate_command.add_argument("resilience_report", type=Path)
+    correlate_command.add_argument("--format", choices=("text", "json"), default="text")
     resilience = commands.add_parser(
         "resilience", help="Exercise a demo client with a local dependency scenario."
     )
@@ -143,6 +164,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.command == "correlate":
+            joined = correlate(args.scan_report, args.resilience_report)
+            print(render_correlation(joined, output_format=args.format))
+            return 0
         if args.command == "diff":
             delta = compare(
                 SavedReport.load(args.baseline), SavedReport.load(args.current)
@@ -199,8 +224,21 @@ def main(argv: list[str] | None = None) -> int:
             _show_plan(result, args.format)
             return 0
         if args.command == "scan":
-            run = scan(contract, PlanConfig.load(args.config))
-            _show_scan(run, contract.digest, engine_version, args.format)
+            proxy_reference = _scan_proxy_reference(
+                args.proxy_trace, args.proxy_observation, args.contract, args.config
+            )
+            run = scan(
+                contract,
+                PlanConfig.load(args.config),
+                proxy_run_id=proxy_reference.run_id
+                if proxy_reference is not None
+                else None,
+            )
+            if run.measurement is not None:
+                run.measurement.observation.save(args.proxy_observation)
+            _show_scan(
+                run, contract.digest, engine_version, args.format, proxy=proxy_reference
+            )
             return run.exit_code
         return _show_check(
             contract, Fixture.load(args.fixture), engine_version, args.format
@@ -418,11 +456,40 @@ def _show_plan(plan: Plan, output_format: str) -> None:
     )
 
 
+def _scan_proxy_reference(
+    trace: Path | None, observation: Path | None, contract: Path, config: Path
+) -> ProxyReference | None:
+    if trace is None and observation is None:
+        return None
+    if trace is None or observation is None:
+        raise InputError(
+            "A correlated scan requires both --proxy-trace and --proxy-observation."
+        )
+    if observation.resolve() in {path.resolve() for path in (trace, contract, config)}:
+        raise InputError(
+            "The proxy observation output must differ from all scan inputs."
+        )
+    return ProxyReference.load(trace)
+
+
 def _show_scan(
-    run: ScanRun, digest: str, engine_version: str, output_format: str
+    run: ScanRun,
+    digest: str,
+    engine_version: str,
+    output_format: str,
+    *,
+    proxy: ProxyReference | None = None,
 ) -> None:
     totals = counts(assertion for case in run.cases for assertion in case.assertions)
     if output_format == "json":
+        payload = asdict(run)
+        del payload["measurement"]
+        if proxy is not None and run.measurement is not None:
+            payload["proxy_observation"] = {
+                **asdict(proxy),
+                "case": run.measurement.case,
+                "client_observation_digest": run.measurement.observation.digest,
+            }
         print(
             json.dumps(
                 {
@@ -430,7 +497,7 @@ def _show_scan(
                     "engine_version": engine_version,
                     "run_id": str(uuid4()),
                     "contract_digest": f"sha256:{digest}",
-                    **asdict(run),
+                    **payload,
                     "counts": totals,
                 },
                 indent=2,
@@ -448,4 +515,6 @@ def _show_scan(
         f"{run.requests_sent} requests sent · "
         f"{run.requests_attempted}/{run.request_budget} attempts"
     )
+    if proxy is not None and run.measurement is not None:
+        print(f"Proxy run {proxy.run_id} · {run.measurement.case}")
     print(format_counts(totals))

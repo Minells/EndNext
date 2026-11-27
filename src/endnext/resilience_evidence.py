@@ -3,11 +3,13 @@
 import hashlib
 import json
 import re
+import tempfile
+from contextlib import suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .evidence import Assertion, Verdict
-from .inputs import InputError, decode_json, read_file
+from .inputs import InputError, JsonObject, decode_json, read_file
 from .resilience import Scenario, evaluate_outcome
 
 TRACE_VERSION = "1"
@@ -15,6 +17,40 @@ _RUN_ID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 _COMPLETED = {"complete", "client_finished"}
 _INTERRUPTED = {"interrupted", "run_deadline_exhausted"}
+
+
+def evidence_run_id(value: object) -> str:
+    if not isinstance(value, str) or not _RUN_ID.fullmatch(value):
+        raise InputError("Evidence requires a canonical run ID.")
+    return value
+
+
+def evidence_digest(value: object) -> str:
+    if not isinstance(value, str) or not _DIGEST.fullmatch(value):
+        raise InputError("Evidence requires a SHA-256 digest.")
+    return value
+
+
+@dataclass(frozen=True)
+class ProxyReference:
+    run_id: str
+    scenario_digest: str
+
+    @classmethod
+    def from_ready(cls, ready: JsonObject) -> "ProxyReference":
+        if ready.get("event") != "ready" or ready.get("trace_version") != TRACE_VERSION:
+            raise InputError(
+                "The proxy trace requires a supported, versioned ready event."
+            )
+        return cls(
+            evidence_run_id(ready.get("run_id")),
+            evidence_digest(ready.get("scenario_digest")),
+        )
+
+    @classmethod
+    def load(cls, path: Path) -> "ProxyReference":
+        first = read_file(path, "proxy trace").partition(b"\n")[0]
+        return cls.from_ready(decode_json(first, "proxy ready event"))
 
 
 def _status(value: object) -> int | None:
@@ -44,9 +80,32 @@ class ClientObservation:
         )
         return f"sha256:{hashlib.sha256(data.encode('ascii')).hexdigest()}"
 
+    def save(self, path: Path) -> None:
+        pending = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=path.parent,
+                delete=False,
+            ) as stream:
+                pending = Path(stream.name)
+                json.dump(asdict(self), stream)
+            pending.replace(path)
+        except OSError:
+            raise InputError("The client observation could not be written.") from None
+        finally:
+            if pending is not None:
+                with suppress(OSError):
+                    pending.unlink(missing_ok=True)
+
     @classmethod
     def load(cls, path: Path) -> "ClientObservation":
         raw = decode_json(read_file(path, "client observation"), "client observation")
+        return cls.from_document(raw)
+
+    @classmethod
+    def from_document(cls, raw: JsonObject) -> "ClientObservation":
         run_id = raw.get("run_id")
         if (
             raw.keys() != {"run_id", "status", "elapsed_ms"}
@@ -77,19 +136,11 @@ class ProxyTrace:
         if not 1 <= len(lines) <= len(scenario.steps) + 2:
             raise InputError("The proxy trace contains an invalid number of events.")
         ready, *events = (decode_json(line, "proxy trace event") for line in lines)
-        run_id = ready.get("run_id")
-        if (
-            ready.get("event") != "ready"
-            or ready.get("trace_version") != TRACE_VERSION
-            or not isinstance(run_id, str)
-            or not _RUN_ID.fullmatch(run_id)
-        ):
-            raise InputError(
-                "The proxy trace requires a supported, versioned ready event."
-            )
+        reference = ProxyReference.from_ready(ready)
+        run_id = reference.run_id
         if (
             ready.get("case") != scenario.name
-            or ready.get("scenario_digest") != f"sha256:{scenario.digest}"
+            or reference.scenario_digest != f"sha256:{scenario.digest}"
             or ready.get("generation")
             != (
                 asdict(scenario.generation) if scenario.generation is not None else None
