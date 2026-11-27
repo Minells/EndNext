@@ -53,7 +53,10 @@ python -m build
 
 The coverage floor is 96% across statements and branches. `python -m build`
 produces a wheel and source distribution under `dist/`. CI installs both in
-clean environments and exercises the CLI on Linux and macOS.
+clean environments and exercises the CLI on Linux and macOS. The Windows job
+installs the wheel and runs offline compatibility tests with UTF-8 enabled.
+See the [platform verification guide](docs/MIGRATING.md#platform-verification)
+for the scope of those checks.
 The **Audit Python dependencies** job checks the resolved Python environment,
 including transitive dependencies, against published PyPI advisories.
 The [M6 verification report](docs/RELEASE_CANDIDATE.md) records the package
