@@ -392,6 +392,10 @@ Attività:
 
 **Criterio di uscita:** documentazione affidabile, regressioni monitorate, compatibilità confermata e utenti esterni che eseguono il prodotto senza assistenza diretta.
 
+Le verifiche tecniche sono descritte nella [guida di migrazione](MIGRATING.md),
+nella [documentazione dell'API Python](PYTHON_API.md) e nel [benchmark](BENCHMARK.md).
+L'adozione autonoma da parte di utenti indipendenti richiede riscontri esterni.
+
 ### Oltre V1.0 — Direzioni di lungo periodo (18–36 mesi, condizionali)
 
 Il backlog strategico include:

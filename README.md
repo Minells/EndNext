@@ -341,13 +341,15 @@ order, verdicts, and message text are outside the fingerprint.
 | [Validator notes](docs/VALIDATOR.md) | Supported inputs, schema validation decisions, and limitations |
 | [Python API v1](docs/PYTHON_API.md) | Verify multiple local response fixtures against one loaded contract |
 | [Offline benchmark](docs/BENCHMARK.md) | Reproduce the synthetic accuracy and contract reuse measurements |
+| [Migration guide](docs/MIGRATING.md) | Upgrade saved evidence and verify supported workflows on each platform |
+| [Changelog](CHANGELOG.md) | User-facing changes and pull requests |
 | [Release candidate verification](docs/RELEASE_CANDIDATE.md) | Packaging checks and results from independent projects |
 | [Brand guidelines](docs/BRANDING.md) | Official logos, design tokens, and documentation conventions |
 | [Security policy](SECURITY.md) | Test scope and private vulnerability reporting |
 
 ## Contributing
 
-Follow the [contribution guide](CONTRIBUTING.md) to set up the development environment and run checks. CI verifies linting, types, tests with a 96% combined statement and branch coverage floor, and installation from both wheel and source distribution on Linux and macOS with Python 3.12. Pull requests into `main` require the **EndNext merge gate**.
+Follow the [contribution guide](CONTRIBUTING.md) to set up the development environment and run checks. CI verifies linting, types, tests with a 96% combined statement and branch coverage floor, and installation from both wheel and source distribution on Linux and macOS with Python 3.12. A Windows job installs the wheel and verifies offline workflows. Pull requests into `main` require the **EndNext merge gate**.
 
 When a change affects CLI behavior, report formats, or a user workflow, update the relevant README sections, examples, or guides in the same pull request and verify the commands you changed.
 
