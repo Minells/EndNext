@@ -20,6 +20,7 @@ from .reporting import SavedReport, format_counts, render
 from .reporting import safe_terminal as _terminal
 from .resilience import OPERATION as SIMULATED_OPERATION
 from .resilience import Scenario, demo_client, run_scenario
+from .resilience_proxy import serve_proxy
 from .rules import verify
 from .scan import ScanRun, scan
 from .transport import Target
@@ -68,6 +69,26 @@ def main(argv: list[str] | None = None) -> int:
     )
     resilience.add_argument("--client", choices=("retry", "single"), default="retry")
     resilience.add_argument("--format", choices=("text", "json"), default="text")
+    proxy = commands.add_parser(
+        "resilience-proxy", help="Serve a bounded HTTP/1.1 scenario on loopback."
+    )
+    proxy.add_argument("scenario", type=Path, help="Local TOML resilience scenario")
+    proxy.add_argument(
+        "--upstream",
+        required=True,
+        help="Authorized loopback origin with explicit port",
+    )
+    proxy.add_argument(
+        "--authorized",
+        action="store_true",
+        help="Declare authorization for the upstream dependency",
+    )
+    proxy.add_argument(
+        "--port",
+        type=int,
+        default=8766,
+        help="Local listener port, or 0 for a free port",
+    )
     report_command = commands.add_parser(
         "report", help="Render a saved JSON evidence report."
     )
@@ -115,6 +136,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "resilience":
             return _show_resilience(
                 Scenario.load(args.scenario), args.client, engine_version, args.format
+            )
+        if args.command == "resilience-proxy":
+            return serve_proxy(
+                Scenario.load(args.scenario, allow_forward=True),
+                upstream=args.upstream,
+                authorized=args.authorized,
+                port=args.port,
+                emit=lambda event: print(json.dumps(event), flush=True),
             )
         contract = Contract.load(args.contract)
         if args.command == "inspect":

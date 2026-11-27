@@ -13,12 +13,14 @@ from test_check import run_cli, write_json
 
 
 @contextmanager
-def listener(handler, tls_context=None):
+def listener(handler, tls_context=None, *, headers_seen=None):
     requests = []
 
     class Server(BaseHTTPRequestHandler):
         def do_GET(self):
             requests.append((self.path, self.headers.get("Cookie"), time.monotonic()))
+            if headers_seen is not None:
+                headers_seen.append(dict(self.headers))
             status, headers, body = handler(self.path)
             with suppress(BrokenPipeError, ConnectionResetError):
                 self.send_response(status)

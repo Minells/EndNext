@@ -20,11 +20,12 @@ _MAX_DELAY_MS = 5_000
 _MAX_ELAPSED_MS = 60_000
 
 type Outcome = int | Literal["timeout", "disconnect"]
+type StepOutcome = Outcome | Literal["forward"]
 
 
 @dataclass(frozen=True)
 class Step:
-    outcome: Outcome
+    outcome: StepOutcome
     delay_ms: int
 
 
@@ -39,7 +40,7 @@ class Scenario:
     digest: str
 
     @classmethod
-    def load(cls, path: Path) -> "Scenario":
+    def load(cls, path: Path, *, allow_forward: bool = False) -> "Scenario":
         raw = read_file(path, "resilience scenario")
         try:
             data = tomllib.loads(raw.decode("utf-8-sig"))
@@ -73,7 +74,7 @@ class Scenario:
             raise InputError(
                 "The scenario needs at least min_attempts steps and at most 20."
             )
-        parsed = tuple(_parse_step(step) for step in steps)
+        parsed = tuple(_parse_step(step, allow_forward=allow_forward) for step in steps)
         if sum(step.delay_ms for step in parsed) > _MAX_ELAPSED_MS:
             raise InputError("The scenario exceeds 60000 ms of simulated latency.")
         return cls(
@@ -95,13 +96,16 @@ def _integer(value: object, field: str, minimum: int, maximum: int) -> int:
     return value
 
 
-def _parse_step(raw: object) -> Step:
+def _parse_step(raw: object, *, allow_forward: bool) -> Step:
     if not isinstance(raw, dict) or raw.keys() - {"outcome", "delay_ms"}:
         raise InputError(
             "Each scenario step allows an outcome and an optional delay_ms."
         )
     outcome = raw.get("outcome")
-    if outcome not in ("timeout", "disconnect"):
+    if outcome == "forward":
+        if not allow_forward:
+            raise InputError("A forward outcome requires the live resilience proxy.")
+    elif outcome not in ("timeout", "disconnect"):
         outcome = _integer(outcome, "step outcome", 200, 599)
     delay = _integer(raw.get("delay_ms", 0), "step delay_ms", 0, _MAX_DELAY_MS)
     return Step(outcome, delay)
@@ -136,6 +140,9 @@ class _Dependency:
             raise httpx.TransportError(self.problem, request=request)
 
         step = self.steps[index]
+        if step.outcome == "forward":
+            self.problem = "A forward outcome requires the live resilience proxy."
+            raise httpx.TransportError(self.problem, request=request)
         self.elapsed_ms += step.delay_ms
         self.events.append(Event(index + 1, step.outcome, self.elapsed_ms))
         if step.outcome == "timeout":
