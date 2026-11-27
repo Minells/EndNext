@@ -2,10 +2,12 @@
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from typing import Literal
 
 from .evidence import Assertion, Verdict
+from .exceptions import FindingException
 from .inputs import InputError
 from .reporting import ReportCase, SavedReport, safe_terminal
 
@@ -82,6 +84,13 @@ class Change:
     kind: ChangeKind
     baseline: AssertionState | None
     current: AssertionState | None
+    exception: FindingException | None = None
+
+    @property
+    def blocks(self) -> bool:
+        if self.exception is not None:
+            return self.exception.status == "expired"
+        return self.kind == "new_failure"
 
 
 @dataclass(frozen=True)
@@ -94,7 +103,7 @@ class BaselineDiff:
 
     @property
     def exit_code(self) -> int:
-        if self.counts["new_failure"]:
+        if any(change.blocks for change in self.changes):
             return 1
         if self.counts["unverified"] or self.compared_checks == 0:
             return 2
@@ -151,7 +160,12 @@ def _classify(before: Assertion | None, after: Assertion | None) -> ChangeKind |
     return None
 
 
-def compare(baseline: SavedReport, current: SavedReport) -> BaselineDiff:
+def compare(
+    baseline: SavedReport,
+    current: SavedReport,
+    *,
+    exceptions: Mapping[str, FindingException] | None = None,
+) -> BaselineDiff:
     left = _checks(baseline)
     right = _checks(current)
     changes = []
@@ -169,19 +183,27 @@ def compare(baseline: SavedReport, current: SavedReport) -> BaselineDiff:
             compared += 1
         kind = _classify(before, after)
         if kind is not None:
-            changes.append(Change(key, kind, _state(key, before), _state(key, after)))
+            observed = _state(key, after)
+            exception = None
+            if exceptions and observed is not None and observed.verdict == "FAIL":
+                exception = exceptions.get(observed.fingerprint)
+            changes.append(Change(key, kind, _state(key, before), observed, exception))
             totals[kind] += 1
     return BaselineDiff(len(left), len(right), compared, totals, tuple(changes))
 
 
 def render_diff(result: BaselineDiff, *, output_format: str) -> str:
     if output_format == "json":
+        payload = asdict(result)
+        for change in payload["changes"]:
+            if change["exception"] is None:
+                del change["exception"]
         return json.dumps(
             {
                 "schema_version": "1",
                 "kind": "baseline_diff",
                 "exit_code": result.exit_code,
-                **asdict(result),
+                **payload,
             },
             indent=2,
         )
@@ -200,10 +222,17 @@ def render_diff(result: BaselineDiff, *, output_format: str) -> str:
             field = change.baseline.field
         location = f" at {field or '(root)'}" if field is not None else ""
         source = f"{key.source}, {key.auth_profile}" if key.auth_profile else key.source
+        exception = ""
+        if change.exception is not None:
+            entry = change.exception
+            exception = (
+                f" · EXCEPTION {entry.status.upper()} (expiry {entry.expires_on} UTC)"
+                f" · {entry.reason}"
+            )
         lines.append(
             safe_terminal(
                 f"{change.kind.replace('_', ' ').upper()} {key.method} {key.path_template} · "
-                f"{key.case} [{source}] · {key.rule}{location} · {before} → {after}"
+                f"{key.case} [{source}] · {key.rule}{location} · {before} → {after}{exception}"
             )
         )
     if not result.compared_checks:
