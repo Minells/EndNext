@@ -10,12 +10,13 @@ from pathlib import Path
 from typing import NoReturn, Protocol
 from uuid import uuid4
 
+from .api_v1 import CheckResult, FixtureChecker
 from .baseline import compare, render_diff
 from .branding import help_heading
 from .contract import Contract
 from .correlation import correlate, render_correlation
-from .evidence import Assertion, Inventory, Operation, counts, primary, report
-from .inputs import Fixture, InputError
+from .evidence import Assertion, Inventory, Operation, counts
+from .inputs import InputError
 from .planner import Plan, PlanConfig, build_plan
 from .policy import Target
 from .reporting import SavedReport, format_counts, render
@@ -30,7 +31,6 @@ from .resilience_evidence import (
 )
 from .resilience_proxy import serve_proxy
 from .resilience_scenario import materialize_scenario
-from .rules import verify
 from .scan import ScanRun, scan
 
 
@@ -207,6 +207,10 @@ def main(argv: list[str] | None = None) -> int:
                 engine_version,
                 args.format,
             )
+        if args.command == "check":
+            return _show_check(
+                FixtureChecker(args.contract).check(args.fixture), args.format
+            )
         contract = Contract.load(args.contract)
         if args.command == "inspect":
             _show_inventory(contract.inventory(), args.format)
@@ -223,26 +227,22 @@ def main(argv: list[str] | None = None) -> int:
             )
             _show_plan(result, args.format)
             return 0
-        if args.command == "scan":
-            proxy_reference = _scan_proxy_reference(
-                args.proxy_trace, args.proxy_observation, args.contract, args.config
-            )
-            run = scan(
-                contract,
-                PlanConfig.load(args.config),
-                proxy_run_id=proxy_reference.run_id
-                if proxy_reference is not None
-                else None,
-            )
-            if run.measurement is not None:
-                run.measurement.observation.save(args.proxy_observation)
-            _show_scan(
-                run, contract.digest, engine_version, args.format, proxy=proxy_reference
-            )
-            return run.exit_code
-        return _show_check(
-            contract, Fixture.load(args.fixture), engine_version, args.format
+        proxy_reference = _scan_proxy_reference(
+            args.proxy_trace, args.proxy_observation, args.contract, args.config
         )
+        run = scan(
+            contract,
+            PlanConfig.load(args.config),
+            proxy_run_id=proxy_reference.run_id
+            if proxy_reference is not None
+            else None,
+        )
+        if run.measurement is not None:
+            run.measurement.observation.save(args.proxy_observation)
+        _show_scan(
+            run, contract.digest, engine_version, args.format, proxy=proxy_reference
+        )
+        return run.exit_code
     except InputError as error:
         print(f"ERROR [input] {error}", file=sys.stderr)
         return 2
@@ -358,39 +358,23 @@ def _show_resilience(
     return run.exit_code
 
 
-def _show_check(
-    contract: Contract, fixture: Fixture, engine_version: str, output_format: str
-) -> int:
-    operation, assertions = verify(contract, fixture, imported=True)
-    assertion = primary(assertions)
+def _show_check(result: CheckResult, output_format: str) -> int:
     if output_format == "json":
-        result = report(
-            assertion,
-            operation,
-            engine_version=engine_version,
-            contract_digest=contract.digest,
-            case=fixture.case,
-            fixture=fixture.filename,
-            status=fixture.status,
-            media_type=fixture.media_type,
-            assertions=assertions,
-        )
-        print(json.dumps(result, indent=2))
+        print(json.dumps(result.to_report(), indent=2))
     else:
+        assertion = result.assertion
         field = "" if assertion.field is None else f" at {assertion.field or '(root)'}"
         print(
-            f"{assertion.verdict} {_operation_name(operation)} · {assertion.rule}{_terminal(field)}"
+            f"{assertion.verdict} {_operation_name(result.operation)} · {assertion.rule}{_terminal(field)}"
         )
         print(
-            f"{assertion.reason} Observation: imported fixture, HTTP {fixture.status}."
+            f"{assertion.reason} Observation: imported fixture, HTTP {result.status}."
         )
-        for detail in assertions:
+        for detail in result.assertions:
             if detail is not assertion:
                 print(f"  {detail.verdict} {detail.rule} · {detail.reason}")
-        print(format_counts(counts(assertions)))
-    if assertion.verdict in {"ERROR", "INCONCLUSIVE"}:
-        return 2
-    return int(assertion.verdict == "FAIL")
+        print(format_counts(counts(result.assertions)))
+    return result.exit_code
 
 
 def _show_inventory(inventory: Inventory, output_format: str) -> None:
