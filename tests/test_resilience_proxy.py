@@ -31,7 +31,8 @@ def _scenario(tmp_path, steps):
 
 
 @contextmanager
-def _start(upstream, scenario=SCENARIO):
+def _start(upstream, scenario=SCENARIO, *, observation=None):
+    options = ["--observation", str(observation)] if observation is not None else []
     with subprocess.Popen(
         [
             str(ENTRY_POINT),
@@ -42,6 +43,7 @@ def _start(upstream, scenario=SCENARIO):
             upstream,
             "--port",
             "0",
+            *options,
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -131,9 +133,11 @@ def test_http11_sequence_forwards_only_the_fixed_request(tmp_path, monkeypatch):
     assert second["elapsed_ms"] - first["elapsed_ms"] >= 95
     assert finished == {
         "event": "finished",
+        "run_id": first["run_id"],
         "reason": "complete",
         "attempts": 3,
         "upstream_requests_sent": 1,
+        "client_observation_digest": None,
     }
 
 
