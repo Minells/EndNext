@@ -3,6 +3,7 @@
 import time
 from collections.abc import Callable
 from contextlib import ExitStack
+from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from socketserver import TCPServer
@@ -138,6 +139,11 @@ class _Proxy(HTTPServer):
                     "origin": f"http://{self.authority}",
                     "case": self.scenario.name,
                     "scenario_digest": f"sha256:{self.scenario.digest}",
+                    **(
+                        {"generation": asdict(self.scenario.generation)}
+                        if self.scenario.generation is not None
+                        else {}
+                    ),
                 }
             )
             while self.problem is None:

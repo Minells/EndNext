@@ -1,114 +1,20 @@
 """Replay deterministic dependency outcomes through an in-process HTTP transport."""
 
-import hashlib
-import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal
 
 import httpx
 
 from .evidence import Assertion, Operation, primary
-from .inputs import CASE_NAME, InputError, read_file
+from .resilience_scenario import Outcome as Outcome
+from .resilience_scenario import Scenario as Scenario
+from .resilience_scenario import Step as Step
+from .resilience_scenario import StepOutcome as StepOutcome
 
 OPERATION = Operation("GET", "/dependency", None)
 _ORIGIN = "http://dependency.invalid"
 _URL = httpx.URL(_ORIGIN + OPERATION.path_template)
-_MAX_ATTEMPTS = 20
-_MAX_DELAY_MS = 5_000
-_MAX_ELAPSED_MS = 60_000
-
-type Outcome = int | Literal["timeout", "disconnect"]
-type StepOutcome = Outcome | Literal["forward"]
-
-
-@dataclass(frozen=True)
-class Step:
-    outcome: StepOutcome
-    delay_ms: int
-
-
-@dataclass(frozen=True)
-class Scenario:
-    name: str
-    expected_status: int
-    min_attempts: int
-    max_attempts: int
-    recovery_budget_ms: int
-    steps: tuple[Step, ...]
-    digest: str
-
-    @classmethod
-    def load(cls, path: Path, *, allow_forward: bool = False) -> "Scenario":
-        raw = read_file(path, "resilience scenario")
-        try:
-            data = tomllib.loads(raw.decode("utf-8-sig"))
-        except (ValueError, RecursionError):
-            raise InputError(
-                "The resilience scenario contains invalid UTF-8 TOML."
-            ) from None
-        if data.keys() - {
-            "name",
-            "expected_status",
-            "min_attempts",
-            "max_attempts",
-            "recovery_budget_ms",
-            "steps",
-        }:
-            raise InputError("The resilience scenario contains an unsupported option.")
-
-        name = data.get("name")
-        if not isinstance(name, str) or not CASE_NAME.fullmatch(name):
-            raise InputError("The resilience scenario requires a valid name.")
-        status = _integer(data.get("expected_status"), "expected_status", 200, 299)
-        minimum = _integer(data.get("min_attempts"), "min_attempts", 1, _MAX_ATTEMPTS)
-        maximum = _integer(
-            data.get("max_attempts"), "max_attempts", minimum, _MAX_ATTEMPTS
-        )
-        budget = _integer(
-            data.get("recovery_budget_ms"), "recovery_budget_ms", 0, _MAX_ELAPSED_MS
-        )
-        steps = data.get("steps")
-        if not isinstance(steps, list) or not minimum <= len(steps) <= _MAX_ATTEMPTS:
-            raise InputError(
-                "The scenario needs at least min_attempts steps and at most 20."
-            )
-        parsed = tuple(_parse_step(step, allow_forward=allow_forward) for step in steps)
-        if sum(step.delay_ms for step in parsed) > _MAX_ELAPSED_MS:
-            raise InputError("The scenario exceeds 60000 ms of simulated latency.")
-        return cls(
-            name,
-            status,
-            minimum,
-            maximum,
-            budget,
-            parsed,
-            hashlib.sha256(raw).hexdigest(),
-        )
-
-
-def _integer(value: object, field: str, minimum: int, maximum: int) -> int:
-    if type(value) is not int or not minimum <= value <= maximum:
-        raise InputError(
-            f"Scenario {field} must be an integer from {minimum} to {maximum}."
-        )
-    return value
-
-
-def _parse_step(raw: object, *, allow_forward: bool) -> Step:
-    if not isinstance(raw, dict) or raw.keys() - {"outcome", "delay_ms"}:
-        raise InputError(
-            "Each scenario step allows an outcome and an optional delay_ms."
-        )
-    outcome = raw.get("outcome")
-    if outcome == "forward":
-        if not allow_forward:
-            raise InputError("A forward outcome requires the live resilience proxy.")
-    elif outcome not in ("timeout", "disconnect"):
-        outcome = _integer(outcome, "step outcome", 200, 599)
-    delay = _integer(raw.get("delay_ms", 0), "step delay_ms", 0, _MAX_DELAY_MS)
-    return Step(outcome, delay)
 
 
 @dataclass(frozen=True)
