@@ -188,9 +188,37 @@ Existing failures and warnings remain visible in the summary. A passing assertio
 
 | Exit code | `check` / `scan` | `diff` |
 | --- | --- | --- |
-| `0` | Completed without a failing or blocking incomplete check | Comparable evidence with no new failures or incomplete baseline checks |
-| `1` | A failing assertion | At least one new failure |
+| `0` | Completed without a failing or blocking incomplete check | Comparable evidence with no blocking failures or incomplete baseline checks |
+| `1` | A failing assertion | A new failure without an active exception, or a current failure with an expired exception |
 | `2` | Invalid input, execution error, or a blocking incomplete check | Invalid input, no comparable checks, or incomplete verification |
+
+### Run the comparison in GitHub Actions
+
+After collecting your current report, use the EndNext composite Action on a Linux or macOS runner. Replace `ENDNEXT_COMMIT_SHA` with the full SHA of an EndNext commit containing the Action. Paths are relative to the workflow workspace, and absolute paths also work. The Action installs EndNext from its pinned revision, so the step works before a PyPI release is available.
+
+```yaml
+- name: Compare EndNext evidence
+  id: endnext
+  uses: Minells/EndNext@ENDNEXT_COMMIT_SHA
+  with:
+    baseline: reports/baseline.json
+    current: reports/current.json
+    artifact-name: endnext-diff
+```
+
+The step uploads `diff.json` before applying the gate. Invalid inputs produce `diagnostics.txt`. Use the `exit-code` output to distinguish a blocking finding (`1`) from incomplete verification (`2`). The `artifact-id` output identifies the upload. Both outcomes fail the step by default. When generating the reports in an earlier step, handle the `check` or `scan` exit code so the workflow can reach the comparison when valid JSON evidence is available.
+
+### Set a temporary finding exception
+
+Use `endnext diff baseline.json current.json --format json` to find a failure's `current.fingerprint`. Copy it to a local TOML policy and set the first UTC date on which the failure must block again. For example, an `expires_on` of `2027-01-15` is active through January 14 UTC.
+
+```toml
+[exceptions."sha256:0000000000000000000000000000000000000000000000000000000000000000"]
+reason = "Track the schema correction in issue #42"
+expires_on = 2027-01-15
+```
+
+Run `endnext diff baseline.json current.json --exceptions exceptions.toml`, or pass `exceptions: exceptions.toml` in the Action's `with` block. Use a reviewed policy file and keep exceptions in it until the finding is resolved. The comparison records the reason, expiry, and whether the exception is active or expired alongside the original finding. An active exception waives only the matching failure. A matching failure blocks when its exception expires, even if it is in the baseline. Incomplete checks continue to affect the result.
 
 ## Documentation
 

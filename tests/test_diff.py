@@ -209,3 +209,118 @@ def test_diff_rejects_ambiguous_duplicate_checks(tmp_path):
     assert not result.stdout
     assert "ERROR [input]" in result.stderr and "duplicate assertions" in result.stderr
     assert SENTINEL not in result.stderr
+
+
+def _exception_policy(path, fingerprint, expiry):
+    path.write_text(
+        f'[exceptions."{fingerprint}"]\n'
+        'reason = "Track the correction in issue #42"\n'
+        f"expires_on = {expiry}\n"
+    )
+    return path
+
+
+@pytest.mark.parametrize("known", [False, True])
+@pytest.mark.parametrize(
+    ("expiry", "state", "exit_code"),
+    [("9999-12-31", "active", 0), ("2000-01-01", "expired", 1)],
+)
+def test_cli_exception_changes_the_gate_but_preserves_the_finding(
+    tmp_path, known, expiry, state, exit_code
+):
+    pass_record = _record("item", "PASS")
+    fail_record = _record("item", "FAIL", field="/quantity")
+    baseline, current = _saved_reports(
+        tmp_path, [fail_record if known else pass_record], [fail_record]
+    )
+    original = json.loads(_diff(baseline, current).stdout)
+    (finding,) = original["changes"]
+    assert "exception" not in finding
+    policy = _exception_policy(
+        tmp_path / "exceptions.toml", finding["current"]["fingerprint"], expiry
+    )
+    result = run_cli(
+        "diff",
+        baseline,
+        current,
+        "--exceptions",
+        policy,
+        "--format",
+        "json",
+        offline=True,
+    )
+    assert result.returncode == exit_code and not result.stderr
+    data = json.loads(result.stdout)
+    assert data["exit_code"] == exit_code
+    assert data["counts"] == original["counts"]
+    (annotated,) = data["changes"]
+    assert annotated.pop("exception") == {
+        "reason": "Track the correction in issue #42",
+        "expires_on": expiry,
+        "status": state,
+    }
+    assert annotated == finding
+    rendered = run_cli("diff", baseline, current, "--exceptions", policy, offline=True)
+    assert rendered.returncode == exit_code
+    assert f"EXCEPTION {state.upper()} (expiry {expiry} UTC)" in rendered.stdout
+    assert "Track the correction in issue #42" in rendered.stdout
+
+
+def test_exception_does_not_waive_incomplete_or_a_different_field(tmp_path):
+    fail = _record("item", "FAIL", field="/quantity")
+    baseline, current = _saved_reports(tmp_path, [_record("item", "PASS")], [fail])
+    (finding,) = json.loads(_diff(baseline, current).stdout)["changes"]
+    policy = _exception_policy(
+        tmp_path / "exceptions.toml", finding["current"]["fingerprint"], "9999-12-31"
+    )
+
+    common = _record("common", "PASS")
+    baseline, current = _saved_reports(
+        tmp_path,
+        [_record("item", "PASS"), common, _record("other", "PASS")],
+        [fail, common, _record("other", "SKIPPED")],
+    )
+    result = run_cli(
+        "diff",
+        baseline,
+        current,
+        "--exceptions",
+        policy,
+        "--format",
+        "json",
+        offline=True,
+    )
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["counts"]["unverified"] == 1
+
+    baseline, current = _saved_reports(
+        tmp_path, [_record("item", "PASS")], [_record("item", "FAIL", field="/unit")]
+    )
+    result = run_cli(
+        "diff",
+        baseline,
+        current,
+        "--exceptions",
+        policy,
+        "--format",
+        "json",
+        offline=True,
+    )
+    assert result.returncode == 1
+    (changed,) = json.loads(result.stdout)["changes"]
+    assert "exception" not in changed
+
+
+def test_diff_rejects_malformed_exception_policy_without_echoing_input(tmp_path):
+    baseline, current = _saved_reports(
+        tmp_path, [_record("item", "PASS")], [_record("item", "FAIL")]
+    )
+    policy = tmp_path / "exceptions.toml"
+    policy.write_text(f"{SENTINEL} = [")
+    result = run_cli("diff", baseline, current, "--exceptions", policy, offline=True)
+    assert result.returncode == 2 and not result.stdout
+    assert (
+        "ERROR [input] The exceptions policy contains invalid UTF-8 TOML."
+        in result.stderr
+    )
+    assert SENTINEL not in result.stderr

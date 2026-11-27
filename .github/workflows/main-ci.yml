@@ -71,6 +71,73 @@ jobs:
             "$endnext" diff "$artifact_env/baseline.json" "$artifact_env/current.json" || status=$?
             test "$status" -eq 1
           done
+      - name: Prepare saved reports for the EndNext Action
+        if: runner.os == 'Linux'
+        id: comparison-reports
+        shell: bash
+        run: |
+          input_dir=$(mktemp -d "$RUNNER_TEMP/endnext-action-inputs.XXXXXX")
+          printf 'dir=%s\n' "$input_dir" >> "$GITHUB_OUTPUT"
+          endnext check examples/items.openapi.json examples/item-pass.json --format json > "$input_dir/pass.json"
+          status=0
+          endnext check examples/items.openapi.json examples/item-fail.json --format json > "$input_dir/fail.json" || status=$?
+          test "$status" -eq 1
+          python - "$input_dir/partial-fixture.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          fixture = json.loads(Path('examples/item-pass.json').read_text())
+          del fixture['body']
+          fixture['body_state'] = 'truncated'
+          Path(sys.argv[1]).write_text(json.dumps(fixture))
+          PY
+          status=0
+          endnext check examples/items.openapi.json "$input_dir/partial-fixture.json" --format json > "$input_dir/partial.json" || status=$?
+          test "$status" -eq 2
+      - name: EndNext Action blocks a new failure
+        if: runner.os == 'Linux'
+        id: regression
+        continue-on-error: true
+        uses: ./
+        with:
+          baseline: ${{ steps.comparison-reports.outputs.dir }}/pass.json
+          current: ${{ steps.comparison-reports.outputs.dir }}/fail.json
+          artifact-name: endnext-regression
+      - name: EndNext Action reports an existing failure
+        if: runner.os == 'Linux'
+        id: existing
+        uses: ./
+        with:
+          baseline: ${{ steps.comparison-reports.outputs.dir }}/fail.json
+          current: ${{ steps.comparison-reports.outputs.dir }}/fail.json
+          artifact-name: endnext-existing
+      - name: EndNext Action flags incomplete verification
+        if: runner.os == 'Linux'
+        id: incomplete
+        continue-on-error: true
+        uses: ./
+        with:
+          baseline: ${{ steps.comparison-reports.outputs.dir }}/pass.json
+          current: ${{ steps.comparison-reports.outputs.dir }}/partial.json
+          artifact-name: endnext-incomplete
+      - name: Verify Action results and artifact uploads
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          REGRESSION: ${{ steps.regression.outcome }}:${{ steps.regression.outputs.exit-code }}
+          EXISTING: ${{ steps.existing.outcome }}:${{ steps.existing.outputs.exit-code }}
+          INCOMPLETE: ${{ steps.incomplete.outcome }}:${{ steps.incomplete.outputs.exit-code }}
+          REGRESSION_ARTIFACT: ${{ steps.regression.outputs.artifact-id }}
+          EXISTING_ARTIFACT: ${{ steps.existing.outputs.artifact-id }}
+          INCOMPLETE_ARTIFACT: ${{ steps.incomplete.outputs.artifact-id }}
+        run: |
+          test "$REGRESSION" = failure:1
+          test "$EXISTING" = success:0
+          test "$INCOMPLETE" = failure:2
+          test -n "$REGRESSION_ARTIFACT"
+          test -n "$EXISTING_ARTIFACT"
+          test -n "$INCOMPLETE_ARTIFACT"
 
   dependency-audit:
     name: Audit Python dependencies
