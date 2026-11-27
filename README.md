@@ -156,6 +156,8 @@ The scan sends three requests and exits with code `1`. To generate a passing bas
 
 The transport allows one request per second, up to 20 attempts, with a five-second limit per request, a 60-second acquisition deadline, and up to 1 MiB of retained response body per response. It disables redirects, retries, environment proxies, and cookie propagation, and verifies HTTPS certificates. Reports distinguish request attempts from completed HTTP header sends.
 
+With a target configured, `plan` checks the resolved path against the target prefix offline. Before sending, the transport verifies scope and allows only bodyless GET requests with the configured authority. A named bearer profile supplies its token at dispatch time.
+
 The `security.authenticated_access` rule treats a 2xx response as allowed and a 403 as denied. A 401, ambiguous status, or partially read response yields `INCONCLUSIVE`. An unavailable credential or excluded case yields `SKIPPED`. Malformed tokens, timeouts, and transport failures yield `ERROR`. An access case with any of these three verdicts makes `scan` exit with code `2`. [Security policy](SECURITY.md)
 
 </details>

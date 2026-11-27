@@ -12,13 +12,13 @@ from uuid import uuid4
 import httpx
 
 from .inputs import InputError
+from .policy import Target
 from .resilience import OPERATION, Scenario, Step
 from .resilience_evidence import TRACE_VERSION, ClientObservation
 from .transport import (
     REQUEST_TIMEOUT,
     Acquisition,
     LoopbackTransport,
-    Target,
     _deadline,
 )
 
