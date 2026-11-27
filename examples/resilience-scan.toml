@@ -1,0 +1,14 @@
+request_budget = 1
+select = ["GET /items/{id}"]
+
+[target]
+authorized = true
+origin = "http://127.0.0.1:8768"
+path_prefix = "/items"
+
+[[cases]]
+name = "item-detail"
+operation = "GET /items/{id}"
+source = "http"
+expected_status = 200
+path_parameters = { id = "1" }

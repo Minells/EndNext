@@ -95,10 +95,11 @@ Contracts can be local JSON or JSON-compatible YAML files up to 1 MiB, with refe
 | `resilience-generate` | Uses a seed to turn a template's alternatives into a concrete TOML scenario. |
 | `resilience-proxy` | Applies a fault sequence to HTTP/1.1 requests and forwards selected steps to an authorized loopback dependency. |
 | `resilience-check` | Checks a saved proxy trace and real client measurement against a resilience scenario. |
+| `correlate` | Joins scan findings with a completed resilience assessment from the same measured request. |
 | `report` | Renders saved v1 and v2 JSON evidence as terminal output or Markdown while preserving verdicts, provenance, and counts. |
 | `diff` | Compares two evidence files and identifies new failures, resolved failures, and checks that could not be verified. |
 
-Use `--format json` with `inspect`, `check`, `plan`, `scan`, `resilience`, `resilience-check`, or `diff` to get structured output on stdout.
+Use `--format json` with `inspect`, `check`, `plan`, `scan`, `resilience`, `resilience-check`, `correlate`, or `diff` to get structured output on stdout.
 
 ### Preview a suite offline
 
@@ -239,6 +240,34 @@ The retrying client reaches HTTP 200 in three attempts against a two-second reco
 To use your own client, start `resilience-proxy` with `--observation client.json`. After the client finishes, atomically publish a JSON object with `run_id` from the `ready` event, `status` as the client's final HTTP status or `null`, and `elapsed_ms` as the client's total elapsed time in milliseconds. The proxy waits for the matching observation within the run deadline. It can finish early when the client stops before the sequence ends. A request beyond the scripted sequence before the observation is recorded ends the run with an execution error.
 
 `resilience-check` loads both files offline. It verifies the run ID and the digests of the scenario and client measurement. It counts dependency attempts from the trace and uses the client measurement for final status and recovery time. An unconfirmed client completion, an interrupted run, or a run without observed attempts yields `INCONCLUSIVE`. A reported proxy execution error yields `ERROR`. Both exit with code `2`. Assessment requires a versioned proxy trace with run IDs.
+
+### Link scan findings to a proxy run
+
+Start the synthetic upstream on port 8767 as above. Start the proxy in a second terminal from the checkout, using a fresh directory for this run. Use the same paths when collecting evidence.
+
+```sh
+run_dir=$(mktemp -d)
+printf '%s\n' "$run_dir"
+endnext resilience-proxy examples/resilience-proxy.toml \
+  --upstream http://127.0.0.1:8767 --authorized \
+  --observation "$run_dir/client.json" > "$run_dir/proxy.jsonl"
+```
+
+In another terminal, run `python examples/resilience_api_demo.py`. The API listens on port 8768 and uses the proxy for its dependency. Once it is ready, run the following commands from the checkout and substitute the directory printed by the proxy terminal.
+
+```sh
+run_dir=/path/printed/by/proxy/terminal
+endnext scan examples/items.openapi.json examples/resilience-scan.toml \
+  --proxy-trace "$run_dir/proxy.jsonl" --proxy-observation "$run_dir/client.json" \
+  --format json > "$run_dir/scan.json"
+endnext resilience-check examples/resilience-proxy.toml "$run_dir/proxy.jsonl" \
+  "$run_dir/client.json" --format json > "$run_dir/resilience.json"
+endnext correlate "$run_dir/scan.json" "$run_dir/resilience.json"
+```
+
+Wait for the proxy to finish before running `resilience-check`. In this demo, the API returns HTTP 503 after one dependency attempt. Both check commands return `1` and write evidence. `correlate` joins the scan's status findings with the resilience assertions and displays the same scan fingerprints used by `diff`.
+
+The two scan options require exactly one eligible live request. The scan measures the HTTP acquisition and publishes the observation atomically for the proxy to read. The offline join verifies the shared run ID, scenario digest, and measurement digest. It exits with `0` for a successful join and `2` when the files are missing, incompatible, or describe an incomplete resilience assessment.
 
 ## Reports and evidence
 

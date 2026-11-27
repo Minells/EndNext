@@ -2,6 +2,8 @@
 
 import os
 import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -9,12 +11,14 @@ from .contract import Contract
 from .evidence import Assertion, Operation, Verdict, primary
 from .inputs import BodyState, Fixture, InputError, Json, decode_json_value, walk
 from .planner import AUTHORIZATION_RULE, Case, PlanConfig, PlannedCase, build_plan
+from .resilience_evidence import ClientObservation
 from .rules import verify
 from .transport import Acquisition, LoopbackTransport, Target
 
 _BEARER = re.compile(r"[A-Za-z0-9._~+/-]+=*")
 _UNSENT = {"outside_target_scope", "request_budget_exhausted", "run_deadline_exhausted"}
 _INTERRUPTED = {"request_timeout", "transport_error"}
+type RecordCapture = Callable[[str, Acquisition, int], None]
 
 
 @dataclass(frozen=True)
@@ -32,11 +36,18 @@ class ScanCase:
 
 
 @dataclass(frozen=True)
+class ScanMeasurement:
+    case: str
+    observation: ClientObservation
+
+
+@dataclass(frozen=True)
 class ScanRun:
     request_budget: int
     requests_attempted: int
     requests_sent: int
     cases: tuple[ScanCase, ...]
+    measurement: ScanMeasurement | None = None
 
     @property
     def exit_code(self) -> int:
@@ -53,13 +64,32 @@ class ScanRun:
         return int("FAIL" in states)
 
 
-def scan(contract: Contract, config: PlanConfig) -> ScanRun:
+def scan(
+    contract: Contract, config: PlanConfig, *, proxy_run_id: str | None = None
+) -> ScanRun:
     target = Target.load(config.target)
     plan = build_plan(
         contract.inventory(),
         config,
         allows_http=lambda case: target.request(case) is not None,
     )
+    if proxy_run_id is not None and plan.requests_planned != 1:
+        raise InputError(
+            "A correlated scan requires exactly one eligible live request."
+        )
+
+    measurement = None
+
+    def record(name: str, capture: Acquisition, elapsed_ms: int) -> None:
+        nonlocal measurement
+        assert proxy_run_id is not None
+        status = capture.status
+        if capture.problem is not None or status is None or not 200 <= status <= 599:
+            status = None
+        measurement = ScanMeasurement(
+            name, ClientObservation(proxy_run_id, status, elapsed_ms)
+        )
+
     configured = {case.name: case for case in config.cases}
     outcomes = []
     transport = LoopbackTransport(target, plan.request_budget)
@@ -74,12 +104,17 @@ def scan(contract: Contract, config: PlanConfig) -> ScanRun:
                         case,
                         configured[case.name],
                         config.auth_profiles,
+                        record if proxy_run_id is not None else None,
                     )
                 )
     finally:
         transport.close()
     return ScanRun(
-        plan.request_budget, transport.attempted, transport.sent, tuple(outcomes)
+        plan.request_budget,
+        transport.attempted,
+        transport.sent,
+        tuple(outcomes),
+        measurement,
     )
 
 
@@ -90,6 +125,7 @@ def _scan_case(
     planned: PlannedCase,
     case: Case,
     profiles: dict[str, str],
+    record: RecordCapture | None,
 ) -> ScanCase:
     source: Literal["live_http", "imported_fixture"] = (
         "live_http" if case.source == "http" else "imported_fixture"
@@ -101,6 +137,7 @@ def _scan_case(
     request = transport.target.request(case)
     if request is None:
         return _skipped(case, operation, source, "outside_target_scope")
+    token = None
     if case.auth_profile is not None:
         token = os.environ.get(profiles[case.auth_profile])
         if not token:
@@ -109,9 +146,13 @@ def _scan_case(
             return _authorization_outcome(
                 case, operation, "ERROR", "auth_credential_invalid"
             )
-        capture = transport.acquire(request, bearer_token=token)
+    started = time.monotonic_ns() if record is not None else 0
+    capture = transport.acquire(request, bearer_token=token)
+    if record is not None and transport.sent:
+        elapsed_ms = (time.monotonic_ns() - started + 999_999) // 1_000_000
+        record(case.name, capture, elapsed_ms)
+    if case.auth_profile is not None:
         return _check_authorization(case, operation, capture)
-    capture = transport.acquire(request)
     return _check_capture(contract, operation, case, capture)
 
 

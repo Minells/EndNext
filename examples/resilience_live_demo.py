@@ -10,6 +10,7 @@ from select import select
 import httpx
 
 from endnext.resilience import demo_client
+from endnext.resilience_evidence import ClientObservation
 
 
 def main():
@@ -53,18 +54,7 @@ def main():
                     client, attempts=3 if args.client == "retry" else 1
                 )
                 elapsed_ms = (time.monotonic_ns() - started + 999_999) // 1_000_000
-            pending = observation.with_suffix(".tmp")
-            pending.write_text(
-                json.dumps(
-                    {
-                        "run_id": ready["run_id"],
-                        "status": status,
-                        "elapsed_ms": elapsed_ms,
-                    }
-                ),
-                encoding="utf-8",
-            )
-            pending.replace(observation)
+            ClientObservation(ready["run_id"], status, elapsed_ms).save(observation)
             rest, _ = proxy.communicate(timeout=10)
             trace.write_text(ready_line + rest, encoding="utf-8")
         finally:

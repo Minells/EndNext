@@ -28,7 +28,10 @@ class SavedReport:
 
     @classmethod
     def load(cls, path: Path) -> "SavedReport":
-        obj = decode_json(read_file(path, "report"), "report")
+        return cls.from_document(decode_json(read_file(path, "report"), "report"))
+
+    @classmethod
+    def from_document(cls, obj: JsonObject) -> "SavedReport":
         for _ in walk(obj, "report"):
             pass
         version = obj.get("schema_version")
