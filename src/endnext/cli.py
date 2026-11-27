@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from dataclasses import asdict
+from functools import partial
 from importlib.metadata import version
 from pathlib import Path
 from typing import NoReturn, Protocol
@@ -17,6 +18,8 @@ from .inputs import Fixture, InputError
 from .planner import Plan, PlanConfig, build_plan
 from .reporting import SavedReport, format_counts, render
 from .reporting import safe_terminal as _terminal
+from .resilience import OPERATION as SIMULATED_OPERATION
+from .resilience import Scenario, demo_client, run_scenario
 from .rules import verify
 from .scan import ScanRun, scan
 from .transport import Target
@@ -57,11 +60,19 @@ def main(argv: list[str] | None = None) -> int:
     scan_command = commands.add_parser(
         "scan", help="Check explicitly authorized loopback GET cases."
     )
+    resilience = commands.add_parser(
+        "resilience", help="Exercise a demo client with a local dependency scenario."
+    )
+    resilience.add_argument(
+        "scenario", type=Path, help="Local TOML resilience scenario"
+    )
+    resilience.add_argument("--client", choices=("retry", "single"), default="retry")
+    resilience.add_argument("--format", choices=("text", "json"), default="text")
     report_command = commands.add_parser(
         "report", help="Render a saved JSON evidence report."
     )
     report_command.add_argument(
-        "input_report", type=Path, help="Saved EndNext check or scan JSON"
+        "input_report", type=Path, help="Saved EndNext evidence JSON"
     )
     report_command.add_argument(
         "--format", choices=("text", "markdown"), default="text"
@@ -70,11 +81,9 @@ def main(argv: list[str] | None = None) -> int:
         "diff", help="Compare a saved baseline with the current evidence."
     )
     diff_command.add_argument(
-        "baseline", type=Path, help="Saved baseline check or scan JSON"
+        "baseline", type=Path, help="Saved baseline evidence JSON"
     )
-    diff_command.add_argument(
-        "current", type=Path, help="Saved current check or scan JSON"
-    )
+    diff_command.add_argument("current", type=Path, help="Saved current evidence JSON")
     diff_command.add_argument("--format", choices=("text", "json"), default="text")
     for command in (check, inspect, plan, scan_command):
         command.add_argument(
@@ -103,6 +112,10 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0
+        if args.command == "resilience":
+            return _show_resilience(
+                Scenario.load(args.scenario), args.client, engine_version, args.format
+            )
         contract = Contract.load(args.contract)
         if args.command == "inspect":
             _show_inventory(contract.inventory(), args.format)
@@ -135,6 +148,57 @@ def main(argv: list[str] | None = None) -> int:
             "ERROR [execution] EndNext could not complete the command.", file=sys.stderr
         )
         return 2
+
+
+def _show_resilience(
+    scenario: Scenario, client: str, engine_version: str, output_format: str
+) -> int:
+    run = run_scenario(
+        scenario, partial(demo_client, attempts=3 if client == "retry" else 1)
+    )
+    totals = counts(run.assertions)
+    if output_format == "json":
+        print(
+            json.dumps(
+                {
+                    "schema_version": "2",
+                    "engine_version": engine_version,
+                    "run_id": str(uuid4()),
+                    "scenario_digest": f"sha256:{scenario.digest}",
+                    "client": client,
+                    "final_status": run.final_status,
+                    "simulated_elapsed_ms": run.elapsed_ms,
+                    "events": [asdict(event) for event in run.events],
+                    "cases": [
+                        {
+                            "case": scenario.name,
+                            "operation": asdict(SIMULATED_OPERATION),
+                            "source": "simulated_http",
+                            "assertions": [
+                                asdict(assertion) for assertion in run.assertions
+                            ],
+                        }
+                    ],
+                    "counts": totals,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(f"{scenario.name} · {client} client · simulated HTTP")
+        for event in run.events:
+            outcome = (
+                f"HTTP {event.outcome}"
+                if isinstance(event.outcome, int)
+                else event.outcome
+            )
+            print(
+                f"  Attempt {event.attempt} · {outcome} · {event.elapsed_ms} ms simulated"
+            )
+        for assertion in run.assertions:
+            print(f"  {assertion.verdict} {assertion.rule} · {assertion.reason}")
+        print(format_counts(totals))
+    return run.exit_code
 
 
 def _show_check(

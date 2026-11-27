@@ -1,0 +1,17 @@
+name = "dependency-retry"
+expected_status = 200
+min_attempts = 3
+max_attempts = 3
+recovery_budget_ms = 250
+
+[[steps]]
+outcome = 503
+delay_ms = 75
+
+[[steps]]
+outcome = 429
+delay_ms = 100
+
+[[steps]]
+outcome = 200
+delay_ms = 25
