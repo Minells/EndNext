@@ -40,6 +40,7 @@ When an API response breaks its contract, you need to know which operation and f
 OpenAPI 3.1 contract + saved response         → check → JSON evidence
 OpenAPI 3.1 contract + TOML suite              → plan  → cases and request budget
 OpenAPI 3.1 contract + authorized local suite → scan  → JSON evidence
+TOML dependency scenario → resilience → simulated HTTP evidence
 
 Saved evidence              → report → terminal or Markdown
 Baseline + current evidence → diff   → regression summary
@@ -90,10 +91,11 @@ Contracts can be local JSON or JSON-compatible YAML files up to 1 MiB, with refe
 | `check` | Validates a captured response against documented status, media type, and schema. Fixtures can also carry expected status, anonymous access, and cache policy assertions. |
 | `plan` | Previews selected operations, effective security, skipped cases, candidate assertions, and estimated request cost entirely offline. |
 | `scan` | Runs explicitly configured GET cases against an authorized loopback service, including access checks with named bearer profiles. |
+| `resilience` | Replays simulated dependency outcomes and checks attempts, final status, and recovery time. |
 | `report` | Renders saved v1 and v2 JSON evidence as terminal output or Markdown while preserving verdicts, provenance, and counts. |
 | `diff` | Compares two evidence files and identifies new failures, resolved failures, and checks that could not be verified. |
 
-Use `--format json` with `inspect`, `check`, `plan`, `scan`, or `diff` to get structured output on stdout.
+Use `--format json` with `inspect`, `check`, `plan`, `scan`, `resilience`, or `diff` to get structured output on stdout.
 
 ### Preview a suite offline
 
@@ -153,6 +155,23 @@ The transport allows one request per second, up to 20 attempts, with a five-seco
 The `security.authenticated_access` rule treats a 2xx response as allowed and a 403 as denied. A 401, ambiguous status, or partially read response yields `INCONCLUSIVE`. An unavailable credential or excluded case yields `SKIPPED`. Malformed tokens, timeouts, and transport failures yield `ERROR`. An access case with any of these three verdicts makes `scan` exit with code `2`. [Security policy](SECURITY.md)
 
 </details>
+
+## Reproduce a dependency retry
+
+The [resilience scenario](examples/resilience-retry.toml) scripts HTTP 503, 429, then 200 for `GET /dependency`. It expects the client to reach HTTP 200 in exactly three attempts and within 250 ms of simulated latency.
+
+```sh
+endnext resilience examples/resilience-retry.toml --client retry --format json > baseline.json
+endnext resilience examples/resilience-retry.toml --client single --format json > current.json
+endnext report current.json
+endnext diff baseline.json current.json
+```
+
+The `retry` client reaches HTTP 200 in three attempts and 200 simulated milliseconds. The `single` client stops on HTTP 503. Its final status and attempt count fail, and its recovery time is skipped. Both the `single` run and the comparison exit with code `1`. A simulation error or a run with no observed dependency attempts exits with code `2`.
+
+Set `outcome` in each `[[steps]]` table to an HTTP status from 200 to 599, `"timeout"`, or `"disconnect"`. An optional `delay_ms` adds to the simulated clock. A scenario uses at most 20 steps, with up to 5000 ms per step and 60000 ms total. The demo's `retry` client allows up to three attempts and retries HTTP 429, HTTP 503, and both simulated transport errors. The ordered steps and input digest make a run replayable. The JSON report includes the outcome and accumulated simulated latency for each attempt.
+
+For a sequential Python client under test, load `endnext.resilience.Scenario` and pass a callable to `endnext.resilience.run_scenario`. The callable receives an in-process HTTPX client for `GET /dependency` and returns a final HTTP status or `None`. The adapter opens no sockets. The timing assertion measures scripted dependency latency. [HTTPX mock transports](https://www.python-httpx.org/advanced/transports/#mock-transports)
 
 ## Reports and evidence
 
