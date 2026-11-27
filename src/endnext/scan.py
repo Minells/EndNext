@@ -11,9 +11,10 @@ from .contract import Contract
 from .evidence import Assertion, Operation, Verdict, primary
 from .inputs import BodyState, Fixture, InputError, Json, decode_json_value, walk
 from .planner import AUTHORIZATION_RULE, Case, PlanConfig, PlannedCase, build_plan
+from .policy import Target
 from .resilience_evidence import ClientObservation
 from .rules import verify
-from .transport import Acquisition, LoopbackTransport, Target
+from .transport import Acquisition, LoopbackTransport
 
 _BEARER = re.compile(r"[A-Za-z0-9._~+/-]+=*")
 _UNSENT = {"outside_target_scope", "request_budget_exhausted", "run_deadline_exhausted"}

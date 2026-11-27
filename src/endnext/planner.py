@@ -10,8 +10,8 @@ from typing import Literal
 
 from .evidence import Inventory, Operation, SecurityRequirements
 from .inputs import CASE_NAME, METHODS, PATH_PARAMETER, Fixture, InputError, read_file
+from .policy import MAX_REQUESTS
 
-MAX_REQUESTS = 20
 AUTHORIZATION_RULE = "security.authenticated_access"
 type OperationKey = tuple[str, str]
 type Scalar = str | int | float

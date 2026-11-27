@@ -1,5 +1,6 @@
 """Serve one bounded HTTP/1.1 scenario on a fixed loopback route."""
 
+import signal
 import time
 from collections.abc import Callable
 from contextlib import ExitStack
@@ -12,13 +13,13 @@ from uuid import uuid4
 import httpx
 
 from .inputs import InputError
+from .policy import Target
 from .resilience import OPERATION, Scenario, Step
 from .resilience_evidence import TRACE_VERSION, ClientObservation
 from .transport import (
     REQUEST_TIMEOUT,
     Acquisition,
     LoopbackTransport,
-    Target,
     _deadline,
 )
 
@@ -272,6 +273,15 @@ def serve_proxy(
                 raise InputError(
                     "The proxy cannot use its own listener as the upstream."
                 )
-            return proxy.run()
+            # Python preserves SIG_IGN across exec, including for a background shell
+            # launch. The proxy's interrupt path must still close with a summary.
+            ignored_interrupt = signal.getsignal(signal.SIGINT) == signal.SIG_IGN
+            if ignored_interrupt:
+                signal.signal(signal.SIGINT, signal.default_int_handler)
+            try:
+                return proxy.run()
+            finally:
+                if ignored_interrupt:
+                    signal.signal(signal.SIGINT, signal.SIG_IGN)
     finally:
         transport.close()

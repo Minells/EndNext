@@ -17,6 +17,7 @@ from .correlation import correlate, render_correlation
 from .evidence import Assertion, Inventory, Operation, counts, primary, report
 from .inputs import Fixture, InputError
 from .planner import Plan, PlanConfig, build_plan
+from .policy import Target
 from .reporting import SavedReport, format_counts, render
 from .reporting import safe_terminal as _terminal
 from .resilience import OPERATION as DEPENDENCY_OPERATION
@@ -31,7 +32,6 @@ from .resilience_proxy import serve_proxy
 from .resilience_scenario import materialize_scenario
 from .rules import verify
 from .scan import ScanRun, scan
-from .transport import Target
 
 
 class _Writable(Protocol):

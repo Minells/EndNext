@@ -102,6 +102,26 @@ def _json_response(path):
     )
 
 
+def test_plan_applies_scope_and_budget_offline(tmp_path, contract):
+    result = run_cli(
+        "plan",
+        contract,
+        config(tmp_path, "http://127.0.0.1:8080", names=("a", "b", "outside")),
+        "--format",
+        "json",
+        offline=True,
+    )
+    assert result.returncode == 0 and not result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["requests_planned"] == 1
+    assert {
+        case["name"]: case["reason"]
+        for operation in plan["operations"]
+        for case in operation["cases"]
+    } == {"a": None, "b": "request_budget_exhausted", "outside": "outside_target_scope"}
+    assert "SCAN_QUERY_SENTINEL" not in result.stdout
+
+
 def test_scan_rate_budget_scope_cookies_and_proxy(tmp_path, contract, monkeypatch):
     with (
         listener(_json_response) as (origin, requests),

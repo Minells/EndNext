@@ -2,6 +2,7 @@ import json
 import signal
 import socket
 import subprocess
+import sys
 from contextlib import contextmanager
 from dataclasses import replace
 from select import select
@@ -31,20 +32,37 @@ def _scenario(tmp_path, steps):
 
 
 @contextmanager
-def _start(upstream, scenario=SCENARIO, *, observation=None, ready_path=None):
+def _start(
+    upstream,
+    scenario=SCENARIO,
+    *,
+    observation=None,
+    ready_path=None,
+    ignore_sigint=False,
+):
     options = ["--observation", str(observation)] if observation is not None else []
+    command = [
+        str(ENTRY_POINT),
+        "resilience-proxy",
+        str(scenario),
+        "--authorized",
+        "--upstream",
+        upstream,
+        "--port",
+        "0",
+        *options,
+    ]
+    if ignore_sigint:
+        command = [
+            sys.executable,
+            "-c",
+            "import os, signal, sys\n"
+            "signal.signal(signal.SIGINT, signal.SIG_IGN)\n"
+            "os.execv(sys.argv[1], sys.argv[1:])\n",
+            *command,
+        ]
     with subprocess.Popen(
-        [
-            str(ENTRY_POINT),
-            "resilience-proxy",
-            str(scenario),
-            "--authorized",
-            "--upstream",
-            upstream,
-            "--port",
-            "0",
-            *options,
-        ],
+        command,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -282,8 +300,9 @@ def test_proxy_exits_at_deadline_without_an_attempt(monkeypatch):
     assert events[-1]["attempts"] == 0
 
 
-def test_proxy_emits_incomplete_summary_on_interrupt():
-    with _start("http://127.0.0.1:8767") as (process, _):
+@pytest.mark.parametrize("ignore_sigint", [False, True])
+def test_proxy_emits_incomplete_summary_on_interrupt(ignore_sigint):
+    with _start("http://127.0.0.1:8767", ignore_sigint=ignore_sigint) as (process, _):
         process.send_signal(signal.SIGINT)
         (finished,) = _finish(process, 2)
     assert finished["reason"] == "interrupted" and finished["attempts"] == 0

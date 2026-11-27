@@ -9,7 +9,8 @@ import pytest
 from endnext import transport
 from endnext.inputs import InputError
 from endnext.planner import Case
-from endnext.transport import Acquisition, LoopbackTransport, Target
+from endnext.policy import Target
+from endnext.transport import Acquisition, LoopbackTransport
 
 
 @pytest.fixture
@@ -96,6 +97,8 @@ def test_target_prepares_path_and_query_and_checks_prefix_boundaries(target):
         ("GET", "http://127.0.0.1:8080/api", {"Host": "other.invalid"}),
         ("GET", "http://127.0.0.1:8080/api", {"Cookie": "id=now"}),
         ("GET", "http://127.0.0.1:8080/api", {"Authorization": "Bearer sample"}),
+        ("GET", "http://127.0.0.1:8080/api", {"Transfer-Encoding": "chunked"}),
+        ("GET", "http://127.0.0.1:8080/api", {"Content-Length": "5"}),
     ],
 )
 def test_last_dispatch_check_keeps_out_of_scope_requests_off_the_transport(
@@ -113,6 +116,28 @@ def test_last_dispatch_check_keeps_out_of_scope_requests_off_the_transport(
         httpx.Request(method, url, headers=headers), bearer_token="test-sentinel"
     )
     assert result == Acquisition(problem="outside_target_scope")
+    assert client.attempted == client.sent == 0
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_transport_rejects_buffered_and_unread_request_bodies(
+    client, monkeypatch, streaming
+):
+    def must_not_send(*args, **kwargs):
+        pytest.fail("Body-bearing requests must never reach HTTPX")
+
+    def unread_body():
+        pytest.fail("The transport must reject a request stream without reading it")
+        yield b"unexpected"
+
+    monkeypatch.setattr(client.client, "send", must_not_send)
+    request = httpx.Request(
+        "GET",
+        "http://127.0.0.1:8080/api",
+        headers={"Host": "127.0.0.1:8080", "Content-Length": "0"},
+        content=unread_body() if streaming else b"unexpected",
+    )
+    assert client.acquire(request) == Acquisition(problem="outside_target_scope")
     assert client.attempted == client.sent == 0
 
 
