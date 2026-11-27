@@ -1,5 +1,6 @@
 # CI, dependency management, and repository policy
 /.github/ @Minells
+/action.yml @Minells
 /.gitignore @Minells
 /SECURITY.md @Minells
 /CODE_OF_CONDUCT.md @Minells

@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from dataclasses import asdict
+from datetime import UTC, datetime
 from functools import partial
 from importlib.metadata import version
 from pathlib import Path
@@ -16,6 +17,7 @@ from .branding import help_heading
 from .contract import Contract
 from .correlation import correlate, render_correlation
 from .evidence import Assertion, Inventory, Operation, counts
+from .exceptions import load_exceptions
 from .inputs import InputError
 from .planner import Plan, PlanConfig, build_plan
 from .policy import Target
@@ -151,6 +153,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     diff_command.add_argument("current", type=Path, help="Saved current evidence JSON")
     diff_command.add_argument("--format", choices=("text", "json"), default="text")
+    diff_command.add_argument(
+        "--exceptions", type=Path, help="Local TOML finding exceptions"
+    )
     for command in (check, inspect, plan, scan_command):
         command.add_argument(
             "contract", type=Path, help="Local OpenAPI 3.1 JSON or YAML document"
@@ -169,8 +174,15 @@ def main(argv: list[str] | None = None) -> int:
             print(render_correlation(joined, output_format=args.format))
             return 0
         if args.command == "diff":
+            exceptions = (
+                load_exceptions(args.exceptions, today=datetime.now(UTC).date())
+                if args.exceptions is not None
+                else None
+            )
             delta = compare(
-                SavedReport.load(args.baseline), SavedReport.load(args.current)
+                SavedReport.load(args.baseline),
+                SavedReport.load(args.current),
+                exceptions=exceptions,
             )
             print(render_diff(delta, output_format=args.format))
             return delta.exit_code
