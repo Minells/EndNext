@@ -14,6 +14,10 @@ that service. Supply bearer credentials via environment variables referenced by
 the test profiles. Keep real credentials and traffic out of examples and shared
 reports.
 
+Run `endnext resilience-proxy` with synthetic dependencies on loopback. It
+accepts a fixed HTTP/1.1 GET route and reuses the scan transport's upstream
+scope and bounds.
+
 ## Report a vulnerability privately
 
 [Open a private vulnerability report][report] through GitHub. If the direct

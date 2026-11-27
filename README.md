@@ -92,6 +92,7 @@ Contracts can be local JSON or JSON-compatible YAML files up to 1 MiB, with refe
 | `plan` | Previews selected operations, effective security, skipped cases, candidate assertions, and estimated request cost entirely offline. |
 | `scan` | Runs explicitly configured GET cases against an authorized loopback service, including access checks with named bearer profiles. |
 | `resilience` | Replays simulated dependency outcomes and checks attempts, final status, and recovery time. |
+| `resilience-proxy` | Applies a fault sequence to HTTP/1.1 requests and forwards selected steps to an authorized loopback dependency. |
 | `report` | Renders saved v1 and v2 JSON evidence as terminal output or Markdown while preserving verdicts, provenance, and counts. |
 | `diff` | Compares two evidence files and identifies new failures, resolved failures, and checks that could not be verified. |
 
@@ -172,6 +173,35 @@ The `retry` client reaches HTTP 200 in three attempts and 200 simulated millisec
 Set `outcome` in each `[[steps]]` table to an HTTP status from 200 to 599, `"timeout"`, or `"disconnect"`. An optional `delay_ms` adds to the simulated clock. A scenario uses at most 20 steps, with up to 5000 ms per step and 60000 ms total. The demo's `retry` client allows up to three attempts and retries HTTP 429, HTTP 503, and both simulated transport errors. The ordered steps and input digest make a run replayable. The JSON report includes the outcome and accumulated simulated latency for each attempt.
 
 For a sequential Python client under test, load `endnext.resilience.Scenario` and pass a callable to `endnext.resilience.run_scenario`. The callable receives an in-process HTTPX client for `GET /dependency` and returns a final HTTP status or `None`. The adapter opens no sockets. The timing assertion measures scripted dependency latency. [HTTPX mock transports](https://www.python-httpx.org/advanced/transports/#mock-transports)
+
+### Exercise a local dependency over HTTP/1.1
+
+Start a synthetic dependency on loopback in one terminal.
+
+```sh
+demo_dir=$(mktemp -d)
+printf 'healthy dependency\n' > "$demo_dir/dependency"
+python -m http.server 8767 --bind 127.0.0.1 --directory "$demo_dir"
+```
+
+In a second terminal, start the proxy with the [forwarding scenario](examples/resilience-proxy.toml).
+
+```sh
+endnext resilience-proxy examples/resilience-proxy.toml \
+  --upstream http://127.0.0.1:8767 --authorized
+```
+
+The `ready` event shows the listener origin. In a third terminal, run the following command three times.
+
+```sh
+curl -i http://127.0.0.1:8766/dependency
+```
+
+The client receives HTTP 503, HTTP 429, then the upstream HTTP 200 with `healthy dependency`. The proxy emits a JSON Lines event per step, recording the chosen response status and elapsed time since listener startup. Its final event shows three attempts and one upstream request. The proxy exits automatically at the end of the sequence. A replay cut short by an upstream error, a deadline, or Ctrl-C exits with code `2`.
+
+The proxy accepts only HTTP/1.1 `GET /dependency` on `127.0.0.1`. The upstream must be a literal loopback origin with an explicit port. Port `0` chooses a free listener port. The proxy uses the scenario's ordered steps. A `forward` step fetches the fixed route from the upstream. Each `delay_ms` is applied in real time. A `disconnect` step closes the connection, and a `timeout` step holds it open for a positive `delay_ms` before closing. Set the test client's read timeout below that delay to observe a timeout.
+
+One connection is handled at a time. The replay has a 60-second deadline and uses the scan transport's bounded upstream requests and response reads. Each upstream request is constructed by EndNext. Forwarded replies carry only the status, media type, and bounded body, including for redirect responses. The JSON Lines trace records proxy events. Use `resilience` for offline assertions on the demo client's final status, attempts, and recovery time.
 
 ## Reports and evidence
 
