@@ -2,13 +2,7 @@
 
 Documento operativo del 25 novembre 2026. La [visione di prodotto](./PRODUCT_PLAN.md) descrive la roadmap di lungo periodo. Questo piano sceglie il primo percorso da realizzare, i criteri per accettarlo e la sequenza per arrivare alla release. La disponibilità prevista è di 6–10 ore settimanali per un maintainer.
 
-## Avvio della prossima sessione
-
-Aprire il checkout che contiene `README.md`, `LICENSE` e `docs/PRODUCT_PLAN.md`. Selezionare **6.2 Sol** con **effort High**. Incollare il prompt seguente.
-
-> Leggi integralmente docs/PRODUCT_PLAN.md e docs/IMPLEMENTATION_PLAN_V0.1.md. Implementa soltanto M1, dal checkout attuale fino alla dimostrazione dalla CLI. Controlla prima lo stato di Git e preserva il lavoro già presente. Usa i due casi a esito noto e la prova con rete bloccata per verificare la scelta del validatore. Completa la milestone, esegui i test e riportami file modificati, comandi da ripetere dal checkout, risultati, limiti verificati e criteri di accettazione eventualmente aperti. Fermati al riesame di M1. M2 partirà con la mia conferma.
-
-Al momento della stesura il checkout locale contiene un README essenziale e una licenza MIT. La directory `docs/` risulta non tracciata. I due piani vanno inclusi tra i file di progetto da versionare, preservando il testo della visione. Il punto di partenza effettivo va ricontrollato all'avvio.
+Questo documento conserva il piano storico del primo incremento. Le prossime milestone e i criteri correnti sono nella [roadmap dal test API alla pull request](ROADMAP.md).
 
 ## Percorso utente e perimetro
 
@@ -124,7 +118,7 @@ Separare gli esiti del servizio dagli errori degli input e dello strumento. Il r
 
 **Decisione del 26 novembre 2026.** Il proprietario ha rinunciato alla prova del quickstart da parte di un maintainer indipendente per l’integrazione di M6. Il versionamento e la pubblicazione restano decisioni separate. [Resoconto delle verifiche](RELEASE_CANDIDATE.md)
 
-## Calendario indicativo
+## Calendario indicativo originale
 
 Ipotesi di 8 ore settimanali e pausa dal 23 al 29 dicembre. Se l’avvio slitta, spostare le finestre mantenendo ordine e criteri di uscita.
 

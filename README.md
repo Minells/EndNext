@@ -367,6 +367,7 @@ Run `endnext diff baseline.json current.json --exceptions exceptions.toml`, or p
 
 | Resource | What you’ll find |
 | --- | --- |
+| [Roadmap](docs/ROADMAP.md) | Milestones and acceptance criteria for the workflow from existing tests to CI |
 | [Examples](examples/) | Sample contracts, fixtures, TOML suites, and the local demo service |
 | [Validator notes](docs/VALIDATOR.md) | Supported inputs, schema validation decisions, and limitations |
 | [Python API v1](docs/PYTHON_API.md) | Verify multiple local response fixtures against one loaded contract |
