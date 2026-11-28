@@ -114,3 +114,37 @@ def test_plan_rejects_case_for_unknown_operation(tmp_path):
     )
     with pytest.raises(InputError, match="case operation is absent"):
         build_plan(Contract.load(CONTRACT).inventory(), PlanConfig.load(config))
+
+
+def test_plan_fixture_budget_and_cache(tmp_path, monkeypatch):
+    from endnext import planner
+
+    inventory = Contract.load(CONTRACT).inventory()
+    path = tmp_path / "plan.toml"
+
+    def configure(files):
+        path.write_text(
+            f'select = ["{OPERATION}"]\n'
+            + "".join(
+                f'[[cases]]\nname="case-{i}"\noperation="{OPERATION}"\nsource="fixture"\nfixture="{name}"\n'
+                for i, name in enumerate(files)
+            )
+        )
+        return PlanConfig.load(path)
+
+    with pytest.raises(InputError, match="256-case"):
+        configure(["one.json"] * 257)
+    with pytest.raises(InputError, match="16-file"):
+        build_plan(inventory, configure([f"{i}.json" for i in range(17)]))
+    fixture = tmp_path / "one.json"
+    fixture.write_bytes(PASS.read_bytes())
+    seen = []
+    load = planner.Fixture.load
+
+    def record(path):
+        seen.append(path)
+        return load(path)
+
+    monkeypatch.setattr(planner.Fixture, "load", record)
+    assert build_plan(inventory, configure(["one.json"] * 3)).cases_planned == 3
+    assert seen == [fixture]

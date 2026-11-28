@@ -3,6 +3,7 @@
 import argparse
 import json
 import subprocess
+import sys
 import time
 from pathlib import Path
 from select import select
@@ -29,6 +30,9 @@ def main():
     trace = args.output / "proxy.jsonl"
     with subprocess.Popen(
         [
+            sys.executable,
+            "-I",
+            "-m",
             "endnext",
             "resilience-proxy",
             str(args.scenario),

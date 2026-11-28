@@ -5,12 +5,16 @@ import re
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import cache
 from pathlib import Path
 from typing import Literal
 
 from .evidence import Inventory, Operation, SecurityRequirements
 from .inputs import CASE_NAME, METHODS, PATH_PARAMETER, Fixture, InputError, read_file
 from .policy import MAX_REQUESTS
+
+MAX_CASES = 256
+MAX_FIXTURE_FILES = 16
 
 AUTHORIZATION_RULE = "security.authenticated_access"
 type OperationKey = tuple[str, str]
@@ -63,6 +67,8 @@ class PlanConfig:
         cases = data.get("cases", [])
         if not isinstance(cases, list):
             raise InputError("The plan cases must be an array of tables.")
+        if len(cases) > MAX_CASES:
+            raise InputError("The plan exceeds the 256-case limit.")
         parsed = tuple(
             sorted(
                 (_parse_case(case, path.parent) for case in cases),
@@ -254,6 +260,24 @@ def build_plan(
             raise InputError("A case operation is absent from the contract.")
         by_operation.setdefault(case.operation, []).append(case)
 
+    @cache
+    def fixture_operation(path: Path) -> OperationKey | str:
+        if not path.exists():
+            return "fixture_missing"
+        try:
+            fixture = Fixture.load(path)
+        except InputError:
+            return "fixture_invalid"
+        return fixture.method.upper(), fixture.path_template
+
+    fixture_paths = {
+        case.fixture
+        for case in config.cases
+        if case.fixture is not None and case.operation in config.selected
+    }
+    if len(fixture_paths) > MAX_FIXTURE_FILES:
+        raise InputError("The plan exceeds the 16-file fixture limit.")
+
     operations = []
     used = 0
     for key, item in known.items():
@@ -268,7 +292,12 @@ def build_plan(
         cases = []
         for case in by_operation.get(key, []):
             reason = _skip_reason(
-                case, selected, anonymous, used < config.request_budget, allows_http
+                case,
+                selected,
+                anonymous,
+                used < config.request_budget,
+                allows_http,
+                fixture_operation,
             )
             cost = int(case.source == "http" and reason is None)
             rules: tuple[CandidateRule, ...] = (_STATUS, _MEDIA, _SCHEMA)
@@ -314,17 +343,17 @@ def _skip_reason(
     anonymous: bool,
     has_budget: bool,
     allows_http: Callable[[Case], bool] | None,
+    fixture_operation: Callable[[Path], OperationKey | str],
 ) -> str | None:
     if not selected:
         return "operation_not_selected"
     if case.source == "fixture":
-        if case.fixture is None or not case.fixture.exists():
+        if case.fixture is None:
             return "fixture_missing"
-        try:
-            fixture = Fixture.load(case.fixture)
-        except InputError:
-            return "fixture_invalid"
-        if (fixture.method.upper(), fixture.path_template) != case.operation:
+        actual = fixture_operation(case.fixture)
+        if isinstance(actual, str):
+            return actual
+        if actual != case.operation:
             return "fixture_operation_mismatch"
         return None
 

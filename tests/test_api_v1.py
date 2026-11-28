@@ -49,3 +49,14 @@ def test_python_api_sanitizes_unexpected_errors(monkeypatch):
         checker.check(PASS)
     assert SENTINEL not in str(failure.value)
     assert failure.value.__suppress_context__
+
+
+def test_isolated_checker_recovers_after_deadline(monkeypatch):
+    checker = api_v1.IsolatedFixtureChecker(CONTRACT)
+    with monkeypatch.context() as patch:
+        patch.setattr(api_v1, "CONTRACT_TIMEOUT", 0.001)
+        with pytest.raises(api_v1.ExecutionError, match="timed out"):
+            checker.check(PASS)
+    assert checker.check(PASS)["verdict"] == "PASS"
+    with pytest.raises(api_v1.InputError):
+        checker.check(CONTRACT)

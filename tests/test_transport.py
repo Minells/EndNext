@@ -220,3 +220,18 @@ def test_hard_deadline_requires_the_main_thread(target):
     with ThreadPoolExecutor() as executor:
         with pytest.raises(InputError, match="POSIX main process"):
             executor.submit(LoopbackTransport, target, 1).result(timeout=2)
+
+
+def test_existing_process_timer_is_preserved():
+    import signal
+
+    signal.setitimer(signal.ITIMER_REAL, 60)
+    try:
+        with (
+            pytest.raises(InputError, match="unused process timer"),
+            transport._deadline(1),
+        ):
+            pytest.fail("Deadline must preserve the active timer")
+        assert signal.getitimer(signal.ITIMER_REAL)[0] > 50
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)

@@ -43,3 +43,8 @@ The example returns the highest exit code across its observations. For the
 bundled pair it returns `1` and writes both reports. Import extension code
 explicitly from your own application. The API version is the `api_v1` module
 name, independent of the package version and the report schema version.
+
+For externally supplied contracts use `IsolatedFixtureChecker(contract).check(fixture)`.
+Each call reads the files afresh in a child process and returns a v2 report.
+A 30-second deadline raises `ExecutionError`. The checker can be reused after a
+timeout. Use `FixtureChecker` for sequential checks of a trusted, cached contract.

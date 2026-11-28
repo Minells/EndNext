@@ -72,6 +72,14 @@ def main(argv: list[str] | None = None) -> int:
         "scan", help="Check explicitly authorized loopback GET cases."
     )
     scan_command.add_argument(
+        "--allow-bearer",
+        nargs=3,
+        action="append",
+        default=[],
+        metavar=("PROFILE", "ENV", "ORIGIN"),
+        help="Authorize this credential environment variable for a profile and exact origin",
+    )
+    scan_command.add_argument(
         "--proxy-trace", type=Path, help="A proxy trace containing its ready event"
     )
     scan_command.add_argument(
@@ -227,8 +235,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "inspect":
             _show_inventory(contract.inventory(), args.format)
             return 0
+        config = PlanConfig.load(args.config)
         if args.command == "plan":
-            config = PlanConfig.load(args.config)
             target = Target.load(config.target) if config.target is not None else None
             result = build_plan(
                 contract.inventory(),
@@ -240,11 +248,16 @@ def main(argv: list[str] | None = None) -> int:
             _show_plan(result, args.format)
             return 0
         proxy_reference = _scan_proxy_reference(
-            args.proxy_trace, args.proxy_observation, args.contract, args.config
+            args.proxy_trace,
+            args.proxy_observation,
+            args.contract,
+            args.config,
+            *(case.fixture for case in config.cases if case.fixture is not None),
         )
         run = scan(
             contract,
-            PlanConfig.load(args.config),
+            config,
+            bearer_grants=frozenset(tuple(grant) for grant in args.allow_bearer),
             proxy_run_id=proxy_reference.run_id
             if proxy_reference is not None
             else None,
@@ -453,7 +466,7 @@ def _show_plan(plan: Plan, output_format: str) -> None:
 
 
 def _scan_proxy_reference(
-    trace: Path | None, observation: Path | None, contract: Path, config: Path
+    trace: Path | None, observation: Path | None, *inputs: Path
 ) -> ProxyReference | None:
     if trace is None and observation is None:
         return None
@@ -461,7 +474,7 @@ def _scan_proxy_reference(
         raise InputError(
             "A correlated scan requires both --proxy-trace and --proxy-observation."
         )
-    if observation.resolve() in {path.resolve() for path in (trace, contract, config)}:
+    if observation.resolve() in {path.resolve() for path in (trace, *inputs)}:
         raise InputError(
             "The proxy observation output must differ from all scan inputs."
         )
@@ -514,3 +527,7 @@ def _show_scan(
     if proxy is not None and run.measurement is not None:
         print(f"Proxy run {proxy.run_id} · {run.measurement.case}")
     print(format_counts(totals))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
