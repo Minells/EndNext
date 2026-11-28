@@ -62,7 +62,10 @@ def test_suite_to_report_and_diff_with_missing_fixture_and_failure(tmp_path):
         assert rendered.returncode == 0 and "/quantity" in rendered.stdout
         diff = run_cli("diff", baseline, current, "--format", "json", offline=True)
         assert diff.returncode == 1
-        changes = json.loads(diff.stdout)["changes"]
+        comparison = json.loads(diff.stdout)
+        assert comparison["blocking_regressions"]
+        assert comparison["incomplete_verification"] == missing
+        changes = comparison["changes"]
         (failure,) = [change for change in changes if change["kind"] == "new_failure"]
         assert failure["check"]["case"] == "first"
         assert failure["current"]["field"] == "/quantity"
@@ -135,6 +138,10 @@ def test_suite_empty_and_intentionally_skipped_cases(tmp_path):
     plan = _config(tmp_path)
     result = _suite(plan)
     assert result.returncode == 2 and _by_case(result) == {}
+    (operation,) = json.loads(result.stdout)["coverage"]["operations"]
+    assert (
+        operation["selected"] and operation["incomplete"] and not operation["executed"]
+    )
     plan = _config(
         tmp_path, _case("live"), _case("unselected", "missing.json"), selected="[]"
     )
@@ -163,3 +170,59 @@ def test_suite_retains_bound_and_preserves_response_without_schema(
     captured = capsys.readouterr()
     assert not captured.out
     assert "Split the plan" in captured.err
+
+
+def test_suite_coverage_distinguishes_contract_selection_execution_and_incomplete(
+    tmp_path,
+):
+    document = json.loads(CONTRACT.read_text())
+    for name in ("/no-case", "/unselected"):
+        document["paths"][name] = {"get": {"responses": {"200": {"description": "OK"}}}}
+    contract = write_json(tmp_path / "contract.json", document)
+    write_json(tmp_path / "pass.json", json.loads(PASS.read_text()))
+    plan = _config(
+        tmp_path,
+        _case("first", "pass.json"),
+        _case("offline-skipped"),
+        selected='["GET /items/{id}", "GET /no-case"]',
+    )
+    result = run_cli("suite", contract, plan, "--format", "json", offline=True)
+    assert result.returncode == 0
+    by_path = {
+        item["operation"]["path_template"]: (
+            item["selected"],
+            item["executed"],
+            item["incomplete"],
+        )
+        for item in json.loads(result.stdout)["coverage"]["operations"]
+    }
+    assert by_path == {
+        "/items/{id}": (True, True, True),
+        "/no-case": (True, False, True),
+        "/unselected": (False, False, False),
+    }
+    report = tmp_path / "report.json"
+    report.write_text(result.stdout, encoding="utf-8")
+    summary = tmp_path / "summary.md"
+    diff = run_cli(
+        "diff",
+        report,
+        report,
+        "--format",
+        "json",
+        "--summary-file",
+        summary,
+        offline=True,
+    )
+    assert diff.returncode == 2
+    result_json = json.loads(diff.stdout)
+    assert (
+        result_json["incomplete_verification"]
+        and not result_json["blocking_regressions"]
+    )
+    assert result_json["counts"]["unverified"] == 0
+    text = summary.read_text(encoding="utf-8")
+    assert "3 contract operations" in text and "2 selected" in text
+    assert "1/2 selected operations with executed checks" in text
+    assert "2/2 selected operations with incomplete verification" in text
+    assert "/no\\-case" in text

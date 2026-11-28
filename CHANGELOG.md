@@ -4,6 +4,8 @@
 
 ### Added
 
+- Show suite operation coverage and independent regression and incomplete verification signals in comparisons and GitHub job summaries.
+
 - Run a TOML plan of saved responses with `endnext suite`, producing one evidence report for comparison in CI.
 
 - Added the versioned offline Python API `endnext.api_v1` for checking multiple saved responses against one validated contract. [PR #17](https://github.com/Minells/EndNext/pull/17)

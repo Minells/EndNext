@@ -6,6 +6,7 @@ from functools import cache
 from uuid import uuid4
 
 from .contract import Contract
+from .coverage import Coverage, OperationCoverage
 from .evidence import Assertion, Operation, counts
 from .inputs import MAX_BYTES, Fixture, InputError
 from .planner import Case, PlanConfig, PlannedCase, build_plan, load_plan_fixture
@@ -108,16 +109,41 @@ def run_suite(
     )
     configured = {case.name: case for case in config.cases}
     outcomes = []
+    operations = []
     for item in plan.operations:
+        operation_outcomes = []
         for planned in item.cases:
             if planned.reason is not None:
-                outcomes.append(_skipped(planned, item.operation, planned.reason))
+                operation_outcomes.append(
+                    _skipped(planned, item.operation, planned.reason)
+                )
                 continue
             case = configured[planned.name]
             assert case.fixture is not None
             fixture = load_fixture(case.fixture)
             assert isinstance(fixture, Fixture)
-            outcomes.append(_verify_case(contract, case, fixture, item.operation))
+            operation_outcomes.append(
+                _verify_case(contract, case, fixture, item.operation)
+            )
+
+        outcomes.extend(operation_outcomes)
+        if item.selected:
+            assertions = [
+                assertion
+                for case in operation_outcomes
+                for assertion in case.assertions
+            ]
+            executed = any(assertion.verdict in _EXECUTED for assertion in assertions)
+            incomplete = not executed or any(
+                assertion.verdict in {"ERROR", "INCONCLUSIVE"}
+                or (assertion.rule == "suite.case" and assertion.verdict == "SKIPPED")
+                for assertion in assertions
+            )
+        else:
+            executed = incomplete = False
+        operations.append(
+            OperationCoverage(item.operation, item.selected, executed, incomplete)
+        )
 
     totals = counts(assertion for case in outcomes for assertion in case.assertions)
     report = {
@@ -127,6 +153,7 @@ def run_suite(
         "contract_digest": f"sha256:{contract.digest}",
         "cases": [case.to_report() for case in outcomes],
         "counts": totals,
+        "coverage": asdict(Coverage(tuple(operations))),
     }
     payload = json.dumps(report, separators=(",", ":"))
     if len(payload) + 1 > MAX_BYTES:

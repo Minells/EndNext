@@ -16,6 +16,7 @@ METADATA = EXAMPLES.parent / "action.yml"
         ("regression", 1, "new_failure"),
         ("existing", 0, "existing_failure"),
         ("incomplete", 2, "unverified"),
+        ("mixed", 1, "new_failure"),
         ("invalid", 2, None),
         ("excepted", 0, "new_failure"),
     ],
@@ -34,7 +35,10 @@ def test_composite_action_collects_evidence_before_applying_gate(
     current_record = (
         _record("document", "INCONCLUSIVE") if scenario == "incomplete" else report
     )
-    baseline, current = _saved_reports(tmp_path, [before], [current_record])
+    baseline_cases, current_records = [before], [current_record]
+    if scenario == "mixed":
+        baseline_cases.append(_record("missing", "PASS", field="/other"))
+    baseline, current = _saved_reports(tmp_path, baseline_cases, current_records)
     if scenario == "invalid":
         current.write_text("invalid JSON")
     policy_path = ""
@@ -56,12 +60,14 @@ def test_composite_action_collects_evidence_before_applying_gate(
     executable.parent.mkdir(parents=True)
     executable.symlink_to(ENTRY_POINT)
     output = tmp_path / "output.txt"
+    summary = tmp_path / "step summary.md"
     environment = os.environ | {
         "ENDNEXT_BASELINE": baseline.name,
         "ENDNEXT_CURRENT": current.name,
         "ENDNEXT_EXCEPTIONS": policy_path,
         "ENDNEXT_WORK_DIR": str(work),
         "GITHUB_OUTPUT": str(output),
+        "GITHUB_STEP_SUMMARY": str(summary),
     }
 
     def run_bash(step, env):
@@ -88,7 +94,9 @@ def test_composite_action_collects_evidence_before_applying_gate(
     assert collected.returncode == 0, collected.stderr
     assert not (tmp_path / "injected").exists()
     assert output.read_text() == f"exit-code={code}\n"
+    markdown = summary.read_text(encoding="utf-8")
     if kind is None:
+        assert "could not compare the reports" in markdown
         assert [file.name for file in evidence.iterdir()] == ["diagnostics.txt"]
         assert "ERROR [input]" in (evidence / "diagnostics.txt").read_text()
     else:
@@ -96,6 +104,18 @@ def test_composite_action_collects_evidence_before_applying_gate(
         result = json.loads((evidence / "diff.json").read_text())
         assert result["exit_code"] == code
         assert result["counts"][kind] == 1
+        blocked = scenario in {"mixed", "regression"}
+        incomplete = scenario in {"mixed", "incomplete"}
+        assert result["blocking_regressions"] is blocked
+        assert result["incomplete_verification"] is incomplete
+        assert f"Blocking regressions: **{'yes' if blocked else 'no'}**" in markdown
+        assert (
+            f"Incomplete verification: **{'yes' if incomplete else 'no'}**" in markdown
+        )
+        if blocked:
+            assert "response.body.schema" in markdown and "/quantity" in markdown
+        if scenario == "mixed":
+            assert "| missing |" in markdown and "/other" in markdown
     applied = run_bash(steps[-1], environment | {"ENDNEXT_EXIT_CODE": str(code)})
     assert applied.returncode == code
 
