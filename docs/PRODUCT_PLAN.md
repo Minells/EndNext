@@ -2,7 +2,7 @@
 
 > **Nome del prodotto:** **EndNext** (confermato)  
 > **Identificativo tecnico proposto:** `endnext` (da verificare su GitHub, PyPI e altri registri)  
-> **Stato:** Product definition completata; architettura e implementazione da avviare  
+> **Stato:** CLI offline, scansione autorizzata, evidenze CI e scenari di resilienza integrati in main
 > **Ultimo aggiornamento:** 25 novembre 2026  
 > **Promotore:** Luca  
 > **Obiettivo personale:** progetto GitHub open source, originale nell'esecuzione, tecnicamente solido e valorizzabile nel portfolio  
@@ -303,6 +303,8 @@ La presenza di questi elementi non prova da sola un vantaggio competitivo. Servi
 - [OWASP API Security Testing Framework](https://owasp.org/www-project-api-security-testing-framework/)
 
 ## 10. Roadmap di sviluppo
+
+La [roadmap corrente](ROADMAP.md) definisce le prossime milestone e le relative prove. Le fasi seguenti documentano la pianificazione iniziale.
 
 **Pianificazione indicativa** per 6–10 ore/settimana. Le date sono ipotesi di lavoro: ogni fase successiva dipende da qualità, feedback e risorse disponibili.
 
