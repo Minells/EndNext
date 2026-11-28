@@ -50,7 +50,19 @@ def scan(tmp_path, origin, *, output="json", single=False):
     if single:
         settings = SETTINGS.split('[[cases]]\nname = "bob-other-document"')[0]
     return run_cli(
-        "scan", CONTRACT, config(tmp_path, origin, settings), "--format", output
+        "scan",
+        CONTRACT,
+        config(tmp_path, origin, settings),
+        "--format",
+        output,
+        "--allow-bearer",
+        "alice",
+        "ENDNEXT_DEMO_ALICE_TOKEN",
+        origin,
+        "--allow-bearer",
+        "bob",
+        "ENDNEXT_DEMO_BOB_TOKEN",
+        origin,
     )
 
 
@@ -240,3 +252,30 @@ def test_rejects_invalid_profile_configuration(tmp_path, settings):
     with pytest.raises(InputError) as error:
         PlanConfig.load(config(tmp_path, "http://127.0.0.1:8765", settings))
     assert ALICE not in str(error.value)
+
+
+@pytest.mark.parametrize("mismatch", ["missing", "origin", "variable", "profile"])
+def test_bearer_grants_are_checked_before_dispatch(tmp_path, credentials, mismatch):
+    with listener(lambda _: (204, {}, b"")) as (origin, received):
+        plan = config(tmp_path, origin)
+        grant = ["bob", "ENDNEXT_DEMO_BOB_TOKEN", origin]
+        if mismatch != "missing":
+            index, value = {
+                "origin": (2, "http://127.0.0.1:1"),
+                "variable": (1, "OTHER_ENV"),
+                "profile": (0, "other"),
+            }[mismatch]
+            grant[index] = value
+        result = run_cli(
+            "scan",
+            CONTRACT,
+            plan,
+            "--allow-bearer",
+            "alice",
+            "ENDNEXT_DEMO_ALICE_TOKEN",
+            origin,
+            *(["--allow-bearer", *grant] if mismatch != "missing" else []),
+        )
+    assert result.returncode == 2 and "--allow-bearer" in result.stderr
+    assert received == []
+    assert_redacted(result)

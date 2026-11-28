@@ -137,7 +137,9 @@ In a second terminal, activate the same virtual environment and run the suite.
 export ENDNEXT_DEMO_ALICE_TOKEN=demo-alice-local
 export ENDNEXT_DEMO_BOB_TOKEN=demo-bob-local
 endnext plan examples/authorization.openapi.json examples/authorization-plan.toml
-endnext scan examples/authorization.openapi.json examples/authorization-plan.toml --format json > current.json
+endnext scan examples/authorization.openapi.json examples/authorization-plan.toml \
+  --allow-bearer alice ENDNEXT_DEMO_ALICE_TOKEN http://127.0.0.1:8765 \
+  --allow-bearer bob ENDNEXT_DEMO_BOB_TOKEN http://127.0.0.1:8765 --format json > current.json
 endnext report current.json
 ```
 

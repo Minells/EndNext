@@ -36,8 +36,12 @@ runs:
       run: |
         work_dir=$(mktemp -d "$RUNNER_TEMP/endnext.XXXXXX")
         mkdir "$work_dir/evidence"
-        python -m venv "$work_dir/venv"
-        "$work_dir/venv/bin/python" -m pip install "$ENDNEXT_SOURCE"
+        cd "$work_dir"
+        python -I -m venv "$work_dir/venv"
+        py="$work_dir/venv/bin/python"
+        "$py" -I -m pip install --only-binary=:all: --require-hashes -r "$ENDNEXT_SOURCE/.github/requirements/action.txt"
+        "$py" -I -m pip install --no-index --no-deps --no-build-isolation "$ENDNEXT_SOURCE"
+        "$py" -I -m pip check
         printf 'work-dir=%s\n' "$work_dir" >> "$GITHUB_OUTPUT"
     - name: Compare reports
       id: compare

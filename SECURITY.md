@@ -11,7 +11,10 @@ candidate branches do not receive backports.
 Run `endnext scan` only against a loopback service you are authorized to test.
 Specify the origin, port, and path prefix, and select the GET cases approved for
 that service. Supply bearer credentials via environment variables referenced by
-the test profiles. Keep real credentials and traffic out of examples and shared
+the test profiles. Authorize each eligible profile separately with
+`--allow-bearer PROFILE ENV ORIGIN` using a trusted operator configuration.
+Use the canonical origin (without a trailing slash or default port). Existing
+plans keep their profile definitions and require the new grant when scanning. Keep real credentials and traffic out of examples and shared
 reports.
 
 Run `endnext resilience-proxy` with synthetic dependencies on loopback. It
@@ -44,3 +47,9 @@ disclosure with the reporter. A GitHub security advisory can record the impact,
 fix, and any mitigation when disclosure is appropriate.
 
 [report]: https://github.com/Minells/EndNext/security/advisories/new
+
+The installed CLI bounds check, inspect and plan to 30 seconds and scan to
+90 seconds including acquisition. Plans allow up to 256 cases and 16 distinct
+selected fixture files (at most 16 MiB of accepted fixture data). Repeated
+fixture paths are checked once per plan. For Python callers processing external
+contracts, use the process-isolated checker described in docs/PYTHON_API.md.

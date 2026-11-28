@@ -34,6 +34,8 @@ def _deadline(seconds: float) -> Iterator[None]:
     def interrupt(signum: int, frame: object) -> None:
         raise _Deadline
 
+    if signal.getitimer(signal.ITIMER_REAL) != (0.0, 0.0):
+        raise InputError("Live transport requires an unused process timer.")
     previous = signal.signal(signal.SIGALRM, interrupt)
     signal.setitimer(signal.ITIMER_REAL, seconds)
     try:

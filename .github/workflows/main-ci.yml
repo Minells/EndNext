@@ -71,6 +71,19 @@ jobs:
             "$endnext" diff "$artifact_env/baseline.json" "$artifact_env/current.json" || status=$?
             test "$status" -eq 1
           done
+      - name: Verify minimum supported build and test tools
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          work_dir=$(mktemp -d)
+          python -m venv "$work_dir/venv"
+          py="$work_dir/venv/bin/python"
+          "$py" -m pip install setuptools==84.1.0 pytest==9.0.3 build wheel
+          "$py" -m build --no-isolation --outdir "$work_dir/dist"
+          for artifact in "$work_dir/dist/"*; do
+            "$py" -m pip install --no-build-isolation --force-reinstall "$artifact"
+            "$py" -m pytest -q tests/test_api_v1.py -k isolated_checker
+          done
       - name: Prepare saved reports for the EndNext Action
         if: runner.os == 'Linux'
         id: comparison-reports
@@ -192,22 +205,37 @@ jobs:
           project_env="$RUNNER_TEMP/endnext-dependencies"
           python -m venv "$project_env"
           project_python="$project_env/bin/python"
-          "$project_python" -m pip install --upgrade 'pip>=26.2'
-          "$project_python" -m pip install -e '.[dev]' build
+          "$project_python" -m pip install --only-binary=:all: --require-hashes -r .github/requirements/action.txt
+          "$project_python" -m pip install --no-build-isolation -e '.[dev]' build
+          "$project_python" -m pip check
+          "$project_python" -VV > "$RUNNER_TEMP/python-version.txt"
+          "$project_python" -m pip list --format=json > "$RUNNER_TEMP/packages.json"
 
+          # EndNext is the source under review. Audit every third-party distribution strictly.
+          "$project_python" -m pip uninstall -y endnext
           python -m pip install 'pip-audit==2.10.1'
           site_packages=$("$project_python" -c 'import sysconfig; print(sysconfig.get_path("purelib"))')
-          python -m pip_audit --path "$site_packages" --skip-editable --progress-spinner off
+          python -m pip_audit --path "$site_packages" --strict --progress-spinner off --format json --output "$RUNNER_TEMP/audit.json"
+      - name: Save dependency audit evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: dependency-audit-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/python-version.txt
+            ${{ runner.temp }}/packages.json
+            ${{ runner.temp }}/audit.json
 
   merge-gate:
     name: EndNext merge gate
     if: ${{ always() }}
-    needs: [verify, verify_windows_offline]
+    needs: [verify, verify_windows_offline, dependency-audit]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Require successful verification on every platform
         env:
+          AUDIT_RESULT: ${{ needs.dependency-audit.result }}
           VERIFY_RESULT: ${{ needs.verify.result }}
           WINDOWS_RESULT: ${{ needs.verify_windows_offline.result }}
-        run: test "$VERIFY_RESULT" = success && test "$WINDOWS_RESULT" = success
+        run: test "$AUDIT_RESULT" = success && test "$VERIFY_RESULT" = success && test "$WINDOWS_RESULT" = success

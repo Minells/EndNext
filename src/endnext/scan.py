@@ -66,7 +66,11 @@ class ScanRun:
 
 
 def scan(
-    contract: Contract, config: PlanConfig, *, proxy_run_id: str | None = None
+    contract: Contract,
+    config: PlanConfig,
+    *,
+    proxy_run_id: str | None = None,
+    bearer_grants: frozenset[tuple[str, str, str]] = frozenset(),
 ) -> ScanRun:
     target = Target.load(config.target)
     plan = build_plan(
@@ -74,6 +78,22 @@ def scan(
         config,
         allows_http=lambda case: target.request(case) is not None,
     )
+    for operation in plan.operations:
+        for planned in operation.cases:
+            profile = planned.auth_profile
+            if (
+                planned.reason is None
+                and profile is not None
+                and (
+                    profile,
+                    config.auth_profiles[profile],
+                    str(target.origin).rstrip("/"),
+                )
+                not in bearer_grants
+            ):
+                raise InputError(
+                    "A planned bearer profile lacks a matching --allow-bearer grant."
+                )
     if proxy_run_id is not None and plan.requests_planned != 1:
         raise InputError(
             "A correlated scan requires exactly one eligible live request."

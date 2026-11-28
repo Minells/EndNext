@@ -98,3 +98,59 @@ def test_composite_action_collects_evidence_before_applying_gate(
         assert result["counts"][kind] == 1
     applied = run_bash(steps[-1], environment | {"ENDNEXT_EXIT_CODE": str(code)})
     assert applied.returncode == code
+
+
+@pytest.mark.parametrize("audit", ["success", "failure", "skipped", "cancelled"])
+def test_merge_gate_requires_dependency_audit(audit):
+    workflow = yaml.safe_load(
+        (METADATA.parent / ".github/workflows/main-ci.yml").read_text()
+    )
+    gate = workflow["jobs"]["merge-gate"]
+    assert "dependency-audit" in gate["needs"]
+    (step,) = gate["steps"]
+    assert step["env"]["AUDIT_RESULT"] == "${{ needs.dependency-audit.result }}"
+    result = subprocess.run(
+        ["bash", "-ec", step["run"]],
+        env=os.environ
+        | {
+            "AUDIT_RESULT": audit,
+            "VERIFY_RESULT": "success",
+            "WINDOWS_RESULT": "success",
+        },
+        check=False,
+    )
+    assert (result.returncode == 0) == (audit == "success")
+
+
+def test_bootstrap_isolated_from_consumer_checkout(tmp_path):
+    import sys
+    from pathlib import Path
+
+    action = yaml.safe_load(METADATA.read_text())
+    install = next(
+        step for step in action["runs"]["steps"] if step.get("id") == "install"
+    )
+    checkout = tmp_path / "consumer"
+    checkout.mkdir()
+    marker = tmp_path / "module-paths"
+    # Exercise the actual bootstrap launcher up to the first package download.
+    bootstrap, suffix = install["run"].split('"$py" -I -m pip install', 1)
+    assert "--require-hashes" in suffix and "--no-build-isolation" in suffix
+    subprocess.run(
+        [
+            "bash",
+            "-ec",
+            bootstrap
+            + '"$py" -I -c \'import json,sys; print(json.dumps(sys.path))\' > "$MARKER"',
+        ],
+        cwd=checkout,
+        env=os.environ
+        | {
+            "RUNNER_TEMP": str(tmp_path),
+            "MARKER": str(marker),
+            "PYTHONPATH": str(checkout),
+            "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"],
+        },
+        check=True,
+    )
+    assert str(checkout) not in json.loads(marker.read_text())

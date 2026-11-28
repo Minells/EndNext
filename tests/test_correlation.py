@@ -305,3 +305,22 @@ def test_observation_output_replaces_atomically_and_reports_io_errors(tmp_path):
     assert ClientObservation.load(output) == latest
     with pytest.raises(InputError, match="could not be written"):
         latest.save(tmp_path / "missing" / "observation.json")
+
+
+@pytest.mark.parametrize("alias", [False, True])
+def test_observation_cannot_replace_plan_fixture(tmp_path, alias):
+    plan = _plan(tmp_path / "scan.toml", "http://127.0.0.1:8768")
+    original = (EXAMPLES / "item-pass.json").read_bytes()
+    fixture = tmp_path / "fixture.json"
+    fixture.write_bytes(original)
+    output = fixture
+    if alias:
+        output = tmp_path / "alias"
+        output.symlink_to(fixture)
+    with plan.open("a") as stream:
+        stream.write(
+            '\n[[cases]]\nname="offline"\noperation="GET /items/{id}"\nsource="fixture"\nfixture="fixture.json"\n'
+        )
+    result = _scan(plan, _ready(tmp_path / "proxy.jsonl"), output, offline=True)
+    assert result.returncode == 2 and "must differ" in result.stderr
+    assert fixture.read_bytes() == original

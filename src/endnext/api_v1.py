@@ -1,5 +1,8 @@
 """Version 1 of the offline fixture verification API."""
 
+import json
+import subprocess
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -7,6 +10,7 @@ from importlib.metadata import version
 from pathlib import Path
 
 from .contract import Contract
+from .entry import CONTRACT_TIMEOUT
 from .evidence import Assertion, Operation, Verdict, primary, report
 from .inputs import Fixture, InputError
 from .rules import verify
@@ -16,6 +20,7 @@ __all__ = [
     "CheckResult",
     "ExecutionError",
     "FixtureChecker",
+    "IsolatedFixtureChecker",
     "InputError",
     "Operation",
     "Verdict",
@@ -94,3 +99,37 @@ class FixtureChecker:
             loaded.media_type,
             self._contract.digest,
         )
+
+
+class IsolatedFixtureChecker:
+    """Read the contract afresh for each check and return a bounded CLI report."""
+
+    def __init__(self, contract: str | Path):
+        self._path = Path(contract)
+
+    def check(self, fixture: str | Path) -> dict[str, object]:
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-m",
+                    "endnext.cli",
+                    "check",
+                    str(self._path),
+                    str(fixture),
+                    "--format",
+                    "json",
+                ],
+                capture_output=True,
+                timeout=CONTRACT_TIMEOUT,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            raise ExecutionError("Contract processing timed out.") from None
+        if result.stderr.startswith(b"ERROR [input]"):
+            raise InputError("Invalid contract or fixture.") from None
+        if result.returncode not in (0, 1, 2) or not result.stdout:
+            raise ExecutionError("EndNext could not complete fixture verification.")
+        report: dict[str, object] = json.loads(result.stdout)
+        return report
