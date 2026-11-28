@@ -13,7 +13,15 @@ def main() -> int:
         timeout = SCAN_TIMEOUT if arguments[0] == "scan" else CONTRACT_TIMEOUT
         try:
             result = subprocess.run(
-                [sys.executable, "-I", "-m", "endnext.cli", *arguments],
+                [
+                    sys.executable,
+                    "-I",
+                    "-X",
+                    f"utf8={sys.flags.utf8_mode}",
+                    "-m",
+                    "endnext.cli",
+                    *arguments,
+                ],
                 timeout=timeout,
                 check=False,
             )
