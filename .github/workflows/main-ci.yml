@@ -211,9 +211,11 @@ jobs:
           "$project_python" -VV > "$RUNNER_TEMP/python-version.txt"
           "$project_python" -m pip list --format=json > "$RUNNER_TEMP/packages.json"
 
+          # EndNext is the source under review. Audit every third-party distribution strictly.
+          "$project_python" -m pip uninstall -y endnext
           python -m pip install 'pip-audit==2.10.1'
           site_packages=$("$project_python" -c 'import sysconfig; print(sysconfig.get_path("purelib"))')
-          python -m pip_audit --path "$site_packages" --skip-editable --strict --progress-spinner off --format json --output "$RUNNER_TEMP/audit.json"
+          python -m pip_audit --path "$site_packages" --strict --progress-spinner off --format json --output "$RUNNER_TEMP/audit.json"
       - name: Save dependency audit evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
