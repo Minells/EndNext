@@ -291,6 +291,40 @@ Set fixture `body_state` to `absent`, `truncated`, or `invalid` and omit `body` 
 
 </details>
 
+## Run a suite of saved responses
+
+Pass an OpenAPI contract and a TOML plan to `suite`. The command loads the
+contract once, uses plan case names for comparison, and operates without network
+access. Multiple cases may cover the same operation.
+
+```sh
+suite_dir=$(mktemp -d)
+cp examples/items-suite.toml "$suite_dir/plan.toml"
+cp examples/item-pass.json "$suite_dir/primary.json"
+cp examples/item-pass.json "$suite_dir/secondary.json"
+endnext suite examples/items.openapi.json "$suite_dir/plan.toml" --format json > "$suite_dir/baseline.json"
+
+cp examples/item-fail.json "$suite_dir/primary.json"
+endnext suite examples/items.openapi.json "$suite_dir/plan.toml" --format json > "$suite_dir/current.json"
+endnext report "$suite_dir/current.json"
+endnext diff "$suite_dir/baseline.json" "$suite_dir/current.json"
+```
+
+The changed suite and comparison exit with code `1`. Remove `secondary.json`
+and repeat the final three commands to see the schema regression alongside the
+missing fixture. Missing or invalid fixtures leave an inconclusive assertion and
+independent cases still run. A plan `expected_status` supplies the expectation
+when the fixture omits it. If both provide different values, that case is
+inconclusive and the report identifies `expected_status`.
+
+In a mixed plan, `suite` records HTTP cases as skipped and sends zero requests.
+Operations outside `select` are skipped. A suite with a failing assertion exits
+with `1`, even when evidence is incomplete. A suite with only incomplete or
+skipped results, or with incomplete fixture checks alongside successful
+results, exits with `2`. A suite with at least one executed check and no
+failure or incomplete fixture check exits with `0`. Review the full report
+alongside the exit code.
+
 ## Compare runs
 
 Save JSON evidence from two runs of the same suite. In this example, `diff` flags the schema mismatch at `/quantity` as a new failure.

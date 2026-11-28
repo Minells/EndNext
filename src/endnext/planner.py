@@ -242,11 +242,22 @@ class Plan:
     candidate_assertions: int
 
 
+def load_plan_fixture(path: Path) -> Fixture | str:
+    try:
+        if not path.exists():
+            return "fixture_missing"
+        return Fixture.load(path)
+    except (InputError, OSError):
+        return "fixture_invalid"
+
+
 def build_plan(
     inventory: Inventory,
     config: PlanConfig,
     *,
     allows_http: Callable[[Case], bool] | None = None,
+    offline_only: bool = False,
+    load_fixture: Callable[[Path], Fixture | str] = load_plan_fixture,
 ) -> Plan:
     known = {
         (item.operation.method, item.operation.path_template): item
@@ -262,12 +273,9 @@ def build_plan(
 
     @cache
     def fixture_operation(path: Path) -> OperationKey | str:
-        if not path.exists():
-            return "fixture_missing"
-        try:
-            fixture = Fixture.load(path)
-        except InputError:
-            return "fixture_invalid"
+        fixture = load_fixture(path)
+        if isinstance(fixture, str):
+            return fixture
         return fixture.method.upper(), fixture.path_template
 
     fixture_paths = {
@@ -298,6 +306,7 @@ def build_plan(
                 used < config.request_budget,
                 allows_http,
                 fixture_operation,
+                offline_only=offline_only,
             )
             cost = int(case.source == "http" and reason is None)
             rules: tuple[CandidateRule, ...] = (_STATUS, _MEDIA, _SCHEMA)
@@ -344,6 +353,8 @@ def _skip_reason(
     has_budget: bool,
     allows_http: Callable[[Case], bool] | None,
     fixture_operation: Callable[[Path], OperationKey | str],
+    *,
+    offline_only: bool,
 ) -> str | None:
     if not selected:
         return "operation_not_selected"
@@ -356,6 +367,9 @@ def _skip_reason(
         if actual != case.operation:
             return "fixture_operation_mismatch"
         return None
+
+    if offline_only:
+        return "suite_http_skipped"
 
     method, template = case.operation
     if case.auth_profile is None:

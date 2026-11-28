@@ -4,6 +4,8 @@
 
 ### Added
 
+- Run a TOML plan of saved responses with `endnext suite`, producing one evidence report for comparison in CI.
+
 - Added the versioned offline Python API `endnext.api_v1` for checking multiple saved responses against one validated contract. [PR #17](https://github.com/Minells/EndNext/pull/17)
 - Added a repeatable benchmark for rule verdicts, inventory size, and contract reuse. [PR #18](https://github.com/Minells/EndNext/pull/18)
 - Added a migration guide and a Windows CI check for the documented offline workflows. See [Migrating EndNext](docs/MIGRATING.md).

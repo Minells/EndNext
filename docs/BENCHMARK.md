@@ -39,3 +39,15 @@ version using the same options.
 One macOS arm64 run with Python 3.12.13 verified all 24 verdicts across three
 rounds at 500 operations. Median time for the five checks was 6.83 seconds
 with a reload for each fixture and 1.39 seconds when reusing the contract.
+
+The suite milestone repeated the benchmark with Python 3.12.13 on macOS arm64
+using `--operations 500 --rounds 3`. It verified the same five fixtures and
+24 assertions with zero disagreements. Median time was 6.851 seconds with
+reloading and 1.393 seconds with reuse, a 4.9× speedup.
+
+The suite reuses the rule engine behind both fixture checkers. The documented
+return types stay stable. `FixtureChecker.check` returns a typed
+`CheckResult`, and `IsolatedFixtureChecker.check` returns a JSON-compatible
+dictionary from a separately bounded process. Suite runs multiple checks
+inside one bounded CLI worker to avoid restarting the process and reloading
+the contract for every fixture.
