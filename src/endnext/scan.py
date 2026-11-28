@@ -9,7 +9,15 @@ from typing import Literal
 
 from .contract import Contract
 from .evidence import Assertion, Operation, Verdict, primary
-from .inputs import BodyState, Fixture, InputError, Json, decode_json_value, walk
+from .inputs import (
+    BodyState,
+    Fixture,
+    InputError,
+    Json,
+    decode_json_value,
+    is_json_media_type,
+    walk,
+)
 from .planner import AUTHORIZATION_RULE, Case, PlanConfig, PlannedCase, build_plan
 from .policy import Target
 from .resilience_evidence import ClientObservation
@@ -290,7 +298,7 @@ def _check_capture(
         body_state = "truncated"
     elif capture.body:
         body_state = "complete"
-        if capture.media_type == "application/json":
+        if is_json_media_type(capture.media_type):
             try:
                 body = decode_json_value(capture.body, "response")
                 for _ in walk(body, "response"):

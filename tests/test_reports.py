@@ -300,3 +300,114 @@ def test_replay_v1_skipped_case_without_assertions(tmp_path):
     assert result.returncode == 0 and not result.stderr
     assert "SKIPPED 1 · 0 requests sent" in result.stdout
     assert "live_http · SKIPPED · case.outcome ·  · not selected" in result.stdout
+
+
+def test_authenticated_fixture_explicit_denial_has_verdict(tmp_path):
+    fixture = _fixture(tmp_path, identity="authenticated", expected_access=False)
+    result = cli(fixture=fixture)
+    assert result.returncode == 1
+    assertions = json.loads(result.stdout)["assertions"]
+    assert any(
+        assertion["rule"] == "security.authenticated_access"
+        and assertion["verdict"] == "FAIL"
+        for assertion in assertions
+    )
+
+
+def test_cache_directive_requires_sensitive_fixture(tmp_path):
+    fixture = _fixture(tmp_path, expected_cache_directive="no-store")
+    result = cli(fixture=fixture)
+    assert result.returncode == 2
+    assert "expected_cache_directive" in result.stderr
+    assert "sensitive" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("method", "status"),
+    [("HEAD", 200), ("GET", 204), ("GET", 205), ("GET", 304)],
+)
+@pytest.mark.parametrize(
+    ("body_state", "verdict", "exit_code"),
+    [(None, "SKIPPED", 0), ("complete", "FAIL", 1), ("truncated", "INCONCLUSIVE", 2)],
+)
+def test_bodyless_response_semantics(
+    tmp_path, method, status, body_state, verdict, exit_code
+):
+    spec = json.loads(CONTRACT.read_text())
+    item = spec["paths"]["/items/{id}"]
+    if method == "HEAD":
+        item["head"] = item.pop("get")
+    responses = item[method.lower()]["responses"]
+    if status != 200:
+        responses[str(status)] = {"description": "No content"}
+    data = json.loads(PASS.read_text())
+    data.update(method=method, status=status)
+    if body_state != "complete":
+        data.pop("body")
+    if body_state is not None:
+        data["body_state"] = body_state
+    fixture = write_json(tmp_path / "fixture.json", data)
+    result = cli(write_json(tmp_path / "openapi.json", spec), fixture)
+    assert result.returncode == exit_code, result.stderr
+    assertions = {
+        assertion["rule"]: assertion["verdict"]
+        for assertion in json.loads(result.stdout)["assertions"]
+    }
+    assert assertions["response.body.schema"] == verdict
+    assert assertions["response.media_type.documented"] == "SKIPPED"
+
+
+@pytest.mark.parametrize(
+    ("media_type", "status", "response_key", "content_key"),
+    [
+        ("application/problem+json", 400, "400", "application/problem+json"),
+        ("application/vnd.items+json", 200, "2XX", "application/*"),
+        ("text/example+json", 400, "default", "*/*"),
+    ],
+)
+def test_structured_json_schema_selection(
+    tmp_path, media_type, status, response_key, content_key
+):
+    from endnext.api_v1 import FixtureChecker
+
+    spec = json.loads(CONTRACT.read_text())
+    responses = spec["paths"]["/items/{id}"]["get"]["responses"]
+    response = responses.pop("200")
+    media = response["content"].pop("application/json")
+    response["content"][content_key] = media
+    if content_key == media_type:
+        response["content"]["application/*"] = {"schema": {"type": "object"}}
+    responses[response_key] = response
+    contract = write_json(tmp_path / "openapi.json", spec)
+    fixture = _fixture(
+        tmp_path, media_type=media_type, status=status, body={"quantity": "bad"}
+    )
+    result = cli(contract, fixture, offline=True)
+    assert result.returncode == 1, result.stderr
+    evidence = json.loads(result.stdout)
+    assert evidence["rule"] == "response.body.schema"
+    assert evidence["field"] == "/quantity"
+    check = FixtureChecker(contract).check(fixture)
+    assert check.assertion.field == "/quantity"
+    assert check.exit_code == 1
+
+
+@pytest.mark.parametrize(("status", "verdict"), [(403, "PASS"), (401, "INCONCLUSIVE")])
+def test_imported_authenticated_denial_distinguishes_unauthenticated(
+    tmp_path, status, verdict
+):
+    spec = json.loads(CONTRACT.read_text())
+    responses = spec["paths"]["/items/{id}"]["get"]["responses"]
+    responses[str(status)] = responses["200"]
+    contract = write_json(tmp_path / "openapi.json", spec)
+    fixture = _fixture(
+        tmp_path, status=status, identity="authenticated", expected_access=False
+    )
+    result = cli(contract, fixture)
+    assert result.returncode == (0 if verdict == "PASS" else 2), result.stderr
+    assertions = json.loads(result.stdout)["assertions"]
+    assert any(
+        assertion["rule"] == "security.authenticated_access"
+        and assertion["verdict"] == verdict
+        for assertion in assertions
+    )

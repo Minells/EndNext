@@ -2,9 +2,9 @@
 
 from urllib.request import parse_http_list
 
-from .contract import Contract
+from .contract import Contract, ResponseSelection
 from .evidence import Assertion, Operation, Verdict
-from .inputs import Fixture, InputError
+from .inputs import Fixture, InputError, body_forbidden, is_json_media_type
 
 
 def verify(
@@ -13,8 +13,8 @@ def verify(
     *,
     imported: bool,
 ) -> tuple[Operation, tuple[Assertion, ...]]:
-    operation, media_types = contract.response_profile(fixture)
-    documented = media_types is not None
+    selection = contract.select_response(fixture)
+    documented = selection.media_types is not None
     status = Assertion(
         "response.status.documented",
         "PASS" if documented else "FAIL",
@@ -23,26 +23,26 @@ def verify(
         if documented
         else "No response in the operation matches the observed HTTP status.",
     )
-    media = _media_assertion(fixture, media_types)
+    media = _media_assertion(fixture, selection)
     schema = _schema_assertion(
         contract,
         fixture,
         media,
-        has_documented_body=bool(media_types),
+        selection=selection,
         imported=imported,
     )
     assertions = [schema, status, media, _expected_status(fixture)]
-    if imported and fixture.anonymous and fixture.expected_access is not None:
-        assertions.append(_anonymous_access(fixture))
+    if imported and fixture.expected_access is not None:
+        assertions.append(_expected_access(fixture))
     if imported and fixture.expected_cache_directive is not None:
         assertions.append(_cache_directive(fixture))
-    return operation, tuple(assertions)
+    return selection.operation, tuple(assertions)
 
 
-def _media_assertion(fixture: Fixture, media_types: list[str] | None) -> Assertion:
+def _media_assertion(fixture: Fixture, selection: ResponseSelection) -> Assertion:
     rule = "response.media_type.documented"
     expectation = "The documented response media type."
-    if not media_types or fixture.status == 204:
+    if not selection.media_types or body_forbidden(fixture.method, fixture.status):
         return Assertion(
             rule,
             "SKIPPED",
@@ -56,8 +56,7 @@ def _media_assertion(fixture: Fixture, media_types: list[str] | None) -> Asserti
         return Assertion(
             rule, verdict, expectation, "The observation has no media type."
         )
-    family = fixture.media_type.partition("/")[0] + "/*"
-    if {fixture.media_type, family, "*/*"}.intersection(media_types):
+    if selection.media is not None:
         return Assertion(
             rule, "PASS", expectation, "The observed media type is documented."
         )
@@ -74,26 +73,26 @@ def _schema_assertion(
     fixture: Fixture,
     media: Assertion,
     *,
-    has_documented_body: bool,
+    selection: ResponseSelection,
     imported: bool,
 ) -> Assertion:
     rule = "response.body.schema"
     expectation = "The documented JSON response body schema."
-    if fixture.status == 204:
+    if body_forbidden(fixture.method, fixture.status):
+        condition = "HEAD" if fixture.method == "head" else f"HTTP {fixture.status}"
+        expectation = f"No body for {condition}."
         if fixture.body_state == "absent":
             return Assertion(
-                rule, "SKIPPED", "No body for HTTP 204.", "The observation has no body."
+                rule, "SKIPPED", expectation, "The observation has no body."
             )
         if fixture.body_state == "truncated":
             return Assertion(
                 rule,
                 "INCONCLUSIVE",
-                "No body for HTTP 204.",
+                expectation,
                 "The partial observation cannot establish whether there was a body.",
             )
-        return Assertion(
-            rule, "FAIL", "No body for HTTP 204.", "The observation contains a body."
-        )
+        return Assertion(rule, "FAIL", expectation, "The observation contains a body.")
     if fixture.body_state in {"invalid", "truncated"}:
         return Assertion(
             rule,
@@ -102,7 +101,7 @@ def _schema_assertion(
             "The observed body is malformed or incomplete.",
         )
     if fixture.body_state == "absent":
-        verdict: Verdict = "FAIL" if has_documented_body else "SKIPPED"
+        verdict: Verdict = "FAIL" if selection.media_types else "SKIPPED"
         return Assertion(rule, verdict, expectation, "The observation has no body.")
     if media.verdict != "PASS":
         return Assertion(
@@ -111,7 +110,7 @@ def _schema_assertion(
             expectation,
             "A documented media type is required for schema validation.",
         )
-    if fixture.media_type != "application/json":
+    if not is_json_media_type(fixture.media_type):
         return Assertion(
             rule,
             "INCONCLUSIVE",
@@ -119,7 +118,7 @@ def _schema_assertion(
             "The observed body uses a format outside JSON validation.",
         )
     try:
-        _, assertion = contract.check(fixture)
+        _, assertion = contract.check(fixture, selection)
         return assertion
     except InputError:
         if imported:
@@ -151,16 +150,14 @@ def _expected_status(fixture: Fixture) -> Assertion:
     )
 
 
-def _anonymous_access(fixture: Fixture) -> Assertion:
-    rule = "security.anonymous_access"
-    expectation = (
-        "Anonymous access allowed."
-        if fixture.expected_access
-        else "Anonymous access denied."
-    )
+def _expected_access(fixture: Fixture) -> Assertion:
+    identity = "anonymous" if fixture.anonymous else "authenticated"
+    rule = f"security.{identity}_access"
+    outcome = "allowed" if fixture.expected_access else "denied"
+    expectation = f"{identity.capitalize()} access {outcome}."
     if 200 <= fixture.status <= 299:
         observed = True
-    elif fixture.status in {401, 403}:
+    elif fixture.status == 403 or (fixture.anonymous and fixture.status == 401):
         observed = False
     else:
         return Assertion(
@@ -174,7 +171,7 @@ def _anonymous_access(fixture: Fixture) -> Assertion:
         rule,
         verdict,
         expectation,
-        f"The imported anonymous observation returned HTTP {fixture.status}.",
+        f"The imported {identity} observation returned HTTP {fixture.status}.",
     )
 
 

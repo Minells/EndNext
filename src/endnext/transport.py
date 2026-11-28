@@ -111,13 +111,15 @@ class LoopbackTransport:
                         .strip()
                         .lower()
                     )
-                    if encoding != "identity":
+                    metadata_only = request.method == "HEAD" or status == 304
+                    if not metadata_only and encoding != "identity":
                         return Acquisition(
                             status, media_type, problem="unsupported_content_encoding"
                         )
                     length = response.headers.get("Content-Length", "")
                     if (
-                        length.isascii()
+                        not metadata_only
+                        and length.isascii()
                         and length.isdecimal()
                         and (len(length) > 10 or int(length) > MAX_BYTES)
                     ):

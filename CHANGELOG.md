@@ -16,3 +16,4 @@
 ### Fixed
 
 - The resilience proxy emits its interrupted summary when launched with `SIGINT` ignored. [PR #16](https://github.com/Minells/EndNext/pull/16)
+- Evaluate explicit fixture access expectations, validate structured JSON media types, and recognize bodyless HTTP responses.

@@ -22,6 +22,16 @@ CACHE_DIRECTIVE = re.compile(r"[a-zA-Z0-9_-]{1,64}")
 type BodyState = Literal["complete", "absent", "invalid", "truncated"]
 
 
+def body_forbidden(method: str, status: int) -> bool:
+    return method.lower() == "head" or status in {204, 205, 304}
+
+
+def is_json_media_type(media_type: str | None) -> bool:
+    return media_type is not None and (
+        media_type == "application/json" or media_type.endswith("+json")
+    )
+
+
 class InputError(Exception):
     """An error whose message is safe to show to the CLI user."""
 
@@ -152,7 +162,9 @@ class Fixture:
             )
         body_state = obj.get(
             "body_state",
-            "absent" if status == 204 and "body" not in obj else "complete",
+            "absent"
+            if body_forbidden(method, status) and "body" not in obj
+            else "complete",
         )
         if body_state not in ("complete", "absent", "invalid", "truncated"):
             raise InputError(
@@ -171,7 +183,7 @@ class Fixture:
         if body_state != "complete" and "body" in obj:
             raise InputError("The fixture body field requires body_state complete.")
         expectation = obj.get("expected_status")
-        if expectation is not None and (
+        if "expected_status" in obj and (
             type(expectation) is not int or not 100 <= expectation <= 599
         ):
             raise InputError(
@@ -179,20 +191,24 @@ class Fixture:
             )
         identity = obj.get("identity")
         access = obj.get("expected_access")
-        if identity not in (None, "anonymous", "authenticated") or (
-            access is not None and type(access) is not bool
-        ):
+        if identity not in (None, "anonymous", "authenticated"):
+            raise InputError("Set fixture identity to anonymous or authenticated.")
+        if "expected_access" in obj and (type(access) is not bool or identity is None):
             raise InputError(
-                "Use an explicit fixture identity and a boolean expected_access."
+                "Set fixture expected_access to a boolean and identity to anonymous or authenticated."
             )
         cache = obj.get("expected_cache_directive")
         sensitive = obj.get("sensitive", False)
         if type(sensitive) is not bool or (
-            cache is not None
+            "expected_cache_directive" in obj
             and (not isinstance(cache, str) or not CACHE_DIRECTIVE.fullmatch(cache))
         ):
             raise InputError(
-                "Use a boolean sensitive flag and an HTTP cache directive name."
+                "Set fixture sensitive to a boolean and expected_cache_directive to an HTTP cache directive name."
+            )
+        if cache is not None and not sensitive:
+            raise InputError(
+                "Set fixture sensitive to true or remove expected_cache_directive."
             )
         headers = obj.get("headers", {})
         if not isinstance(headers, dict) or any(
@@ -218,9 +234,9 @@ class Fixture:
             path.name,
             media_type.lower() if isinstance(media_type, str) else None,
             cast(BodyState, body_state),
-            expectation,
+            cast(int | None, expectation),
             identity == "anonymous",
-            access,
+            cast(bool | None, access),
             cache.lower() if sensitive and isinstance(cache, str) else None,
             cache_control,
         )
