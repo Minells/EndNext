@@ -303,3 +303,52 @@ def test_scan_keeps_status_when_response_json_is_invalid(tmp_path, contract):
         "response.media_type.documented": "PASS",
         "response.status.expected": "PASS",
     }
+
+
+@pytest.mark.parametrize("valid", [True, False])
+def test_scan_decodes_structured_json(tmp_path, contract, valid):
+    document = json.loads(contract.read_text())
+    content = document["paths"]["/api/item"]["get"]["responses"]["200"]["content"]
+    content["application/problem+json"] = {
+        "schema": {"type": "object", "properties": {"detail": {"type": "string"}}}
+    }
+    write_json(contract, document)
+    body = b'{"detail":"expected"}' if valid else b'{"detail":3}'
+    with listener(
+        lambda _: (
+            200,
+            {"Content-Type": "application/problem+json; charset=utf-8"},
+            body,
+        )
+    ) as (origin, _):
+        result = run_cli("scan", contract, config(tmp_path, origin), "--format", "json")
+    assert result.returncode == int(not valid), result.stderr
+    schema = next(
+        a
+        for a in json.loads(result.stdout)["cases"][0]["assertions"]
+        if a["rule"] == "response.body.schema"
+    )
+    assert schema["verdict"] == ("PASS" if valid else "FAIL")
+    assert schema["field"] == (None if valid else "/detail")
+
+
+def test_scan_ignores_304_representation_metadata(tmp_path, contract):
+    document = json.loads(contract.read_text())
+    responses = document["paths"]["/api/item"]["get"]["responses"]
+    responses["304"] = {"description": "Not modified"}
+    write_json(contract, document)
+    with listener(
+        lambda _: (
+            304,
+            {"Content-Encoding": "gzip", "Content-Length": "9999999999"},
+            b"",
+        )
+    ) as (origin, _):
+        result = run_cli("scan", contract, config(tmp_path, origin), "--format", "json")
+    assert result.returncode == 1, result.stderr  # The plan expects HTTP 200.
+    assertions = {
+        assertion["rule"]: assertion["verdict"]
+        for assertion in json.loads(result.stdout)["cases"][0]["assertions"]
+    }
+    assert assertions["response.status.documented"] == "PASS"
+    assert assertions["response.body.schema"] == "SKIPPED"

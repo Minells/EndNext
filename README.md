@@ -287,7 +287,7 @@ The fixture check deliberately exits with code `1` and writes valid JSON evidenc
 <details>
 <summary>Record partial responses and policy expectations</summary>
 
-Set fixture `body_state` to `absent`, `truncated`, or `invalid` and omit `body` when the response lacks a complete JSON value. For HTTP 204, you can omit both body and media type. With `identity: "anonymous"`, the fixture can assert `expected_access` against an imported observation. With `sensitive: true`, `expected_cache_directive` checks for the named directive in `headers.Cache-Control`.
+Set fixture `body_state` to `absent`, `truncated`, or `invalid` and omit `body` when the response lacks a complete JSON value. For HEAD or HTTP 204, 205, and 304, omit the body. A captured body fails the body assertion and a truncated capture leaves it inconclusive. EndNext validates documented `application/json` and media types ending in `+json`. Set `identity` to `"anonymous"` or `"authenticated"` when declaring `expected_access`. HTTP 2xx establishes access, and HTTP 403 establishes denial. HTTP 401 also establishes denial for an anonymous observation. Set `sensitive: true` when declaring `expected_cache_directive` to check the named directive in `headers.Cache-Control`.
 
 </details>
 
