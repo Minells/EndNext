@@ -325,6 +325,14 @@ results, exits with `2`. A suite with at least one executed check and no
 failure or incomplete fixture check exits with `0`. Review the full report
 alongside the exit code.
 
+The suite report counts all contract operations by distinct method and path
+template. The plan's `select` list defines the denominator for the executed
+and incomplete counts. An operation is executed when at least one check
+returns `PASS`, `FAIL`, or `WARN`. A selected operation is incomplete if it
+has no executed check, a selected case was skipped offline, or a check was
+inconclusive or errored. A single operation can count in both groups. An
+empty plan reports zero selected operations when `select` is empty.
+
 ## Compare runs
 
 Save JSON evidence from two runs of the same suite. In this example, `diff` flags the schema mismatch at `/quantity` as a new failure.
@@ -358,7 +366,12 @@ carry a single assertion, and the reader derives counts from the assertions
 present. V2 records carry `assertions` arrays and aggregate `counts` that must
 match those arrays. Both versions support an individual case or a `cases`
 array. The JSON emitted by `diff` has its own schema (`baseline_diff`, version
-`"1"`). Save the original evidence files for future comparisons.
+`"1"`). Save the original evidence files for future comparisons. The comparison
+exposes `blocking_regressions` and `incomplete_verification` independently.
+Both can be true when the exit code is `1`. A comparison with incomplete
+selected operation coverage exits with `2` when no regression blocks.
+Reports produced before operation coverage was added still compare using
+their saved assertions.
 
 The same finding has the same fingerprint across compatible report versions.
 `diff` and `correlate` use `sha256:` followed by the lowercase SHA-256 hex digest
@@ -383,7 +396,7 @@ After collecting your current report, use the EndNext composite Action on a Linu
     artifact-name: endnext-diff
 ```
 
-The step uploads `diff.json` before applying the gate. Invalid inputs produce `diagnostics.txt`. Use the `exit-code` output to distinguish a blocking finding (`1`) from incomplete verification (`2`). The `artifact-id` output identifies the upload. Both outcomes fail the step by default. When generating the reports in an earlier step, handle the `check` or `scan` exit code so the workflow can reach the comparison when valid JSON evidence is available.
+The Action publishes the comparison in the job summary and uploads `diff.json` before applying the gate. The summary lists the first blocking regressions and unverified checks by operation, rule, and field. Suite comparisons also list selected operations with incomplete verification. Invalid inputs produce `diagnostics.txt`. Use the `exit-code` output to distinguish a blocking finding (`1`) from incomplete verification (`2`). The `artifact-id` output identifies the upload. Both outcomes fail the step by default. When generating the reports in an earlier step, handle the `check` or `scan` exit code so the workflow can reach the comparison when valid JSON evidence is available.
 
 ### Set a temporary finding exception
 

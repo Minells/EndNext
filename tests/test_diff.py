@@ -389,3 +389,31 @@ def test_diff_rejects_malformed_exception_policy_without_echoing_input(tmp_path)
         in result.stderr
     )
     assert SENTINEL not in result.stderr
+
+
+def test_step_summary_is_bounded_and_escapes_report_values(tmp_path):
+    malicious = "/<img src=x>|@someone\n" + "a" * 200
+    baseline = [_record(str(index), "PASS") for index in range(14)]
+    findings = [_record(str(index), "FAIL", field=malicious) for index in range(14)]
+    left, right = _saved_reports(tmp_path, baseline, findings)
+    summary = tmp_path / "step summary.md"
+    summary.write_text("Earlier step\n", encoding="utf-8")
+    result = run_cli(
+        "diff", left, right, "--format", "json", "--summary-file", summary, offline=True
+    )
+    assert result.returncode == 1, result.stderr
+    text = summary.read_text(encoding="utf-8")
+    assert text.startswith("Earlier step\n")
+    assert "<img" not in text and "@someone" not in text
+    assert "&lt;img" in text and "&#64;someone" in text
+    assert text.count("/&lt;img") == 10
+    assert "4 more in the comparison artifact." in text
+    assert "a" * 120 not in text
+    assert len(json.loads(result.stdout)["changes"]) == 14
+
+    original = left.read_bytes()
+    alias = tmp_path / "alias"
+    alias.hardlink_to(left)
+    rejected = run_cli("diff", left, right, "--summary-file", alias, offline=True)
+    assert rejected.returncode == 2
+    assert left.read_bytes() == original

@@ -12,7 +12,7 @@ from typing import NoReturn, Protocol
 from uuid import uuid4
 
 from .api_v1 import CheckResult, FixtureChecker
-from .baseline import compare, render_diff
+from .baseline import compare, render_diff, render_summary
 from .branding import help_heading
 from .contract import Contract
 from .correlation import correlate, render_correlation
@@ -168,6 +168,9 @@ def main(argv: list[str] | None = None) -> int:
     diff_command.add_argument(
         "--exceptions", type=Path, help="Local TOML finding exceptions"
     )
+    diff_command.add_argument(
+        "--summary-file", type=Path, help="Append a short Markdown comparison summary"
+    )
     for command in (check, inspect, plan, suite, scan_command):
         command.add_argument(
             "contract", type=Path, help="Local OpenAPI 3.1 JSON or YAML document"
@@ -196,6 +199,18 @@ def main(argv: list[str] | None = None) -> int:
                 SavedReport.load(args.current),
                 exceptions=exceptions,
             )
+            if args.summary_file is not None:
+                for source in (args.baseline, args.current, args.exceptions):
+                    if (
+                        source is not None
+                        and args.summary_file.exists()
+                        and args.summary_file.samefile(source)
+                    ):
+                        raise InputError(
+                            "Choose a summary-file separate from the comparison inputs."
+                        )
+                with args.summary_file.open("a", encoding="utf-8") as summary:
+                    summary.write(render_summary(delta) + "\n")
             print(render_diff(delta, output_format=args.format))
             return delta.exit_code
         if args.command == "report":

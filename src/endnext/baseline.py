@@ -6,10 +6,11 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from typing import Literal
 
+from .coverage import Coverage
 from .evidence import Assertion, Verdict
 from .exceptions import FindingException
 from .inputs import InputError
-from .reporting import ReportCase, SavedReport, safe_terminal
+from .reporting import ReportCase, SavedReport, safe_terminal, summary_cell
 
 type ChangeKind = Literal[
     "new_failure",
@@ -100,14 +101,25 @@ class BaselineDiff:
     compared_checks: int
     counts: dict[ChangeKind, int]
     changes: tuple[Change, ...]
+    coverage: Coverage | None = None
+
+    @property
+    def blocking_regressions(self) -> bool:
+        return any(change.blocks for change in self.changes)
+
+    @property
+    def incomplete_verification(self) -> bool:
+        return (
+            self.counts["unverified"] > 0
+            or self.compared_checks == 0
+            or (self.coverage is not None and self.coverage.incomplete > 0)
+        )
 
     @property
     def exit_code(self) -> int:
-        if any(change.blocks for change in self.changes):
+        if self.blocking_regressions:
             return 1
-        if self.counts["unverified"] or self.compared_checks == 0:
-            return 2
-        return 0
+        return 2 if self.incomplete_verification else 0
 
 
 def _checks(report: SavedReport) -> dict[CheckKey, Assertion]:
@@ -189,12 +201,16 @@ def compare(
                 exception = exceptions.get(observed.fingerprint)
             changes.append(Change(key, kind, _state(key, before), observed, exception))
             totals[kind] += 1
-    return BaselineDiff(len(left), len(right), compared, totals, tuple(changes))
+    return BaselineDiff(
+        len(left), len(right), compared, totals, tuple(changes), current.coverage
+    )
 
 
 def render_diff(result: BaselineDiff, *, output_format: str) -> str:
     if output_format == "json":
         payload = asdict(result)
+        if result.coverage is None:
+            del payload["coverage"]
         for change in payload["changes"]:
             if change["exception"] is None:
                 del change["exception"]
@@ -203,6 +219,8 @@ def render_diff(result: BaselineDiff, *, output_format: str) -> str:
                 "schema_version": "1",
                 "kind": "baseline_diff",
                 "exit_code": result.exit_code,
+                "blocking_regressions": result.blocking_regressions,
+                "incomplete_verification": result.incomplete_verification,
                 **payload,
             },
             indent=2,
@@ -213,6 +231,10 @@ def render_diff(result: BaselineDiff, *, output_format: str) -> str:
             f"{total} {kind.replace('_', ' ')}" for kind, total in result.counts.items()
         )
     ]
+    if result.coverage is not None:
+        lines.append(result.coverage.summary())
+    if result.incomplete_verification:
+        lines.append("Verification is incomplete.")
     for change in result.changes:
         key = change.check
         before = change.baseline.verdict if change.baseline else "missing"
@@ -237,4 +259,85 @@ def render_diff(result: BaselineDiff, *, output_format: str) -> str:
         )
     if not result.compared_checks:
         lines.append("No checks have executed verdicts in both reports.")
+    return "\n".join(lines)
+
+
+_SUMMARY_LIMIT = 10
+
+
+def render_summary(result: BaselineDiff) -> str:
+    def flag(value: bool) -> str:
+        return "yes" if value else "no"
+
+    lines = [
+        "### EndNext comparison",
+        "",
+        f"- Blocking regressions: **{flag(result.blocking_regressions)}**",
+        f"- Incomplete verification: **{flag(result.incomplete_verification)}**",
+        f"- Checks compared: {result.compared_checks}",
+        *(
+            f"- {kind.replace('_', ' ').capitalize()}: {total}"
+            for kind, total in result.counts.items()
+        ),
+    ]
+    if result.coverage is not None:
+        lines.extend(("", result.coverage.summary()))
+        missing = [item for item in result.coverage.operations if item.incomplete]
+        if missing:
+            lines.extend(
+                ("", "#### Selected operations with incomplete verification", "")
+            )
+            for item in missing[:_SUMMARY_LIMIT]:
+                operation = item.operation
+                lines.append(
+                    f"- {summary_cell(f'{operation.method} {operation.path_template}')}"
+                )
+            if len(missing) > _SUMMARY_LIMIT:
+                lines.append(
+                    f"- {len(missing) - _SUMMARY_LIMIT} more in the comparison artifact."
+                )
+
+    groups = (
+        (
+            "Blocking regressions",
+            [change for change in result.changes if change.blocks],
+        ),
+        (
+            "Unverified checks",
+            [change for change in result.changes if change.kind == "unverified"],
+        ),
+    )
+    for title, changes in groups:
+        if not changes:
+            continue
+        lines.extend(
+            (
+                "",
+                f"#### {title}",
+                "",
+                "| Operation | Case | Rule | Field |",
+                "| --- | --- | --- | --- |",
+            )
+        )
+        for change in changes[:_SUMMARY_LIMIT]:
+            key = change.check
+            state = (
+                change.current if change.blocks else change.baseline or change.current
+            )
+            field = state.field if state is not None else None
+            cells = (
+                f"{key.method} {key.path_template}",
+                key.case,
+                key.rule,
+                "(root)" if field == "" else field or "",
+            )
+            lines.append("| " + " | ".join(map(summary_cell, cells)) + " |")
+        if len(changes) > _SUMMARY_LIMIT:
+            lines.extend(
+                (
+                    "",
+                    f"{len(changes) - _SUMMARY_LIMIT} more in the comparison artifact.",
+                )
+            )
+    lines.extend(("", "See the comparison artifact for the full JSON evidence.", ""))
     return "\n".join(lines)

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from .coverage import Coverage
 from .evidence import VERDICTS, Assertion, Operation, Verdict, counts
 from .inputs import InputError, Json, JsonObject, decode_json, read_file, walk
 
@@ -25,6 +26,7 @@ class SavedReport:
     cases: tuple[ReportCase, ...]
     counts: dict[str, int]
     requests_sent: int | None
+    coverage: Coverage | None = None
 
     @classmethod
     def load(cls, path: Path) -> "SavedReport":
@@ -57,7 +59,10 @@ class SavedReport:
         sent = obj.get("requests_sent")
         if sent is not None and (type(sent) is not int or sent < 0):
             raise InputError("The report contains an invalid request count.")
-        return cls(entries, actual, sent)
+        coverage = (
+            Coverage.from_document(obj["coverage"]) if "coverage" in obj else None
+        )
+        return cls(entries, actual, sent, coverage)
 
 
 def _object(value: Json) -> JsonObject:
@@ -144,11 +149,19 @@ def _cell(value: str) -> str:
     return _MARKDOWN.sub(r"\\\1", html.escape(safe_terminal(value)))
 
 
+def summary_cell(value: str) -> str:
+    shortened = value if len(value) <= 120 else value[:119] + "…"
+    return _cell(shortened).replace("@", "&#64;")
+
+
 def render(saved: SavedReport, *, markdown: bool) -> str:
     summary = format_counts(saved.counts)
     if saved.requests_sent is not None:
         summary += f" · {saved.requests_sent} requests sent"
-    lines = [summary, ""]
+    lines = [summary]
+    if saved.coverage is not None:
+        lines.extend(("", saved.coverage.summary()))
+    lines.append("")
     if markdown:
         lines.extend(
             (
