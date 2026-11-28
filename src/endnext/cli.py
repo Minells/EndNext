@@ -34,6 +34,7 @@ from .resilience_evidence import (
 from .resilience_proxy import serve_proxy
 from .resilience_scenario import materialize_scenario
 from .scan import ScanRun, scan
+from .suite import run_suite
 
 
 class _Writable(Protocol):
@@ -67,6 +68,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     plan = commands.add_parser(
         "plan", help="Plan local cases and estimate their request cost."
+    )
+    suite = commands.add_parser(
+        "suite", help="Check a plan of local response fixtures offline."
     )
     scan_command = commands.add_parser(
         "scan", help="Check explicitly authorized loopback GET cases."
@@ -164,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
     diff_command.add_argument(
         "--exceptions", type=Path, help="Local TOML finding exceptions"
     )
-    for command in (check, inspect, plan, scan_command):
+    for command in (check, inspect, plan, suite, scan_command):
         command.add_argument(
             "contract", type=Path, help="Local OpenAPI 3.1 JSON or YAML document"
         )
@@ -172,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
             "--format", choices=("text", "json"), default="text", help="Output format"
         )
     check.add_argument("fixture", type=Path, help="Local JSON response fixture")
-    for command in (plan, scan_command):
+    for command in (plan, suite, scan_command):
         command.add_argument("config", type=Path, help="Local TOML plan configuration")
     args = parser.parse_args(argv)
 
@@ -236,6 +240,8 @@ def main(argv: list[str] | None = None) -> int:
             _show_inventory(contract.inventory(), args.format)
             return 0
         config = PlanConfig.load(args.config)
+        if args.command == "suite":
+            return run_suite(contract, config, engine_version, args.format)
         if args.command == "plan":
             target = Target.load(config.target) if config.target is not None else None
             result = build_plan(

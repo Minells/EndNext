@@ -1,0 +1,15 @@
+select = ["GET /items/{id}"]
+
+[[cases]]
+name = "item-primary"
+operation = "GET /items/{id}"
+source = "fixture"
+fixture = "primary.json"
+expected_status = 200
+
+[[cases]]
+name = "item-secondary"
+operation = "GET /items/{id}"
+source = "fixture"
+fixture = "secondary.json"
+expected_status = 200

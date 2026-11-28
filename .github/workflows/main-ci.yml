@@ -91,22 +91,25 @@ jobs:
         run: |
           input_dir=$(mktemp -d "$RUNNER_TEMP/endnext-action-inputs.XXXXXX")
           printf 'dir=%s\n' "$input_dir" >> "$GITHUB_OUTPUT"
-          endnext check examples/items.openapi.json examples/item-pass.json --format json > "$input_dir/pass.json"
-          status=0
-          endnext check examples/items.openapi.json examples/item-fail.json --format json > "$input_dir/fail.json" || status=$?
-          test "$status" -eq 1
-          python - "$input_dir/partial-fixture.json" <<'PY'
-          import json
-          import sys
-          from pathlib import Path
+          cp examples/items-suite.toml "$input_dir/plan.toml"
+          cp examples/item-pass.json "$input_dir/primary.json"
+          cp examples/item-pass.json "$input_dir/secondary.json"
+          suite=(endnext suite examples/items.openapi.json "$input_dir/plan.toml" --format json)
+          "${suite[@]}" > "$input_dir/pass.json"
 
-          fixture = json.loads(Path('examples/item-pass.json').read_text())
-          del fixture['body']
-          fixture['body_state'] = 'truncated'
-          Path(sys.argv[1]).write_text(json.dumps(fixture))
-          PY
+          cp examples/item-fail.json "$input_dir/primary.json"
           status=0
-          endnext check examples/items.openapi.json "$input_dir/partial-fixture.json" --format json > "$input_dir/partial.json" || status=$?
+          "${suite[@]}" > "$input_dir/fail.json" || status=$?
+          test "$status" -eq 1
+
+          rm "$input_dir/secondary.json"
+          status=0
+          "${suite[@]}" > "$input_dir/mixed.json" || status=$?
+          test "$status" -eq 1
+
+          cp examples/item-pass.json "$input_dir/primary.json"
+          status=0
+          "${suite[@]}" > "$input_dir/partial.json" || status=$?
           test "$status" -eq 2
       - name: EndNext Action blocks a new failure
         if: runner.os == 'Linux'
@@ -134,6 +137,15 @@ jobs:
           baseline: ${{ steps.comparison-reports.outputs.dir }}/pass.json
           current: ${{ steps.comparison-reports.outputs.dir }}/partial.json
           artifact-name: endnext-incomplete
+      - name: EndNext Action retains a regression with a missing fixture
+        if: runner.os == 'Linux'
+        id: mixed
+        continue-on-error: true
+        uses: ./
+        with:
+          baseline: ${{ steps.comparison-reports.outputs.dir }}/pass.json
+          current: ${{ steps.comparison-reports.outputs.dir }}/mixed.json
+          artifact-name: endnext-mixed
       - name: Verify Action results and artifact uploads
         if: runner.os == 'Linux'
         shell: bash
@@ -141,6 +153,8 @@ jobs:
           REGRESSION: ${{ steps.regression.outcome }}:${{ steps.regression.outputs.exit-code }}
           EXISTING: ${{ steps.existing.outcome }}:${{ steps.existing.outputs.exit-code }}
           INCOMPLETE: ${{ steps.incomplete.outcome }}:${{ steps.incomplete.outputs.exit-code }}
+          MIXED: ${{ steps.mixed.outcome }}:${{ steps.mixed.outputs.exit-code }}
+          MIXED_ARTIFACT: ${{ steps.mixed.outputs.artifact-id }}
           REGRESSION_ARTIFACT: ${{ steps.regression.outputs.artifact-id }}
           EXISTING_ARTIFACT: ${{ steps.existing.outputs.artifact-id }}
           INCOMPLETE_ARTIFACT: ${{ steps.incomplete.outputs.artifact-id }}
@@ -151,6 +165,8 @@ jobs:
           test -n "$REGRESSION_ARTIFACT"
           test -n "$EXISTING_ARTIFACT"
           test -n "$INCOMPLETE_ARTIFACT"
+          test "$MIXED" = failure:1
+          test -n "$MIXED_ARTIFACT"
 
   verify_windows_offline:
     name: Verify offline on Windows
@@ -186,6 +202,7 @@ jobs:
           tests/test_diff.py
           tests/test_planner_validation.py
           tests/test_reports.py
+          tests/test_suite.py
           tests/test_resilience.py
           tests/test_resilience_generation.py::test_seeded_cli_replays_byte_identical_scenarios_offline
 

@@ -9,7 +9,7 @@ SCAN_TIMEOUT = 90.0
 
 def main() -> int:
     arguments = sys.argv[1:]
-    if arguments and arguments[0] in {"inspect", "check", "plan", "scan"}:
+    if arguments and arguments[0] in {"inspect", "check", "plan", "scan", "suite"}:
         timeout = SCAN_TIMEOUT if arguments[0] == "scan" else CONTRACT_TIMEOUT
         try:
             result = subprocess.run(
